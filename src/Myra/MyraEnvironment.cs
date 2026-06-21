@@ -5,6 +5,7 @@ using Myra.Utility;
 using AssetManagementBase;
 using Myra.Graphics2D.UI;
 using System.Collections.Generic;
+using FontStashSharp;
 
 #if MONOGAME || FNA
 using Microsoft.Xna.Framework;
@@ -224,11 +225,26 @@ namespace Myra
 				_defaultAssetManager = value;
 			}
 		}
-
+		
+		/// <summary>
+		/// Highlights the border of all widgets
+		/// </summary>
 		public static bool DrawWidgetsFrames { get; set; }
 		public static bool DrawKeyboardFocusedWidgetFrame { get; set; }
+		/// <summary>
+		/// Highlights the borders of the widget hierarchy currently being hovered over
+		/// </summary>
 		public static bool DrawMouseHoveredWidgetFrame { get; set; }
 		public static bool DrawTextGlyphsFrames { get; set; }
+		/// <summary>
+		/// Draws information about the widget under the mouse cursor
+		/// </summary>
+		public static bool DrawMouseHoveredWidgetInfo { get; set; }
+		/// <summary>
+		/// The default font to use when rendering text in overlays.
+		/// If unset, some debug overlays may not work.
+		/// </summary>
+		public static SpriteFontBase DefaultDebugFont { get; set; }
 		public static bool DisableClipping { get; set; }
 
 		public static Func<MouseInfo> MouseInfoGetter { get; set; } = DefaultMouseInfoGetter;
