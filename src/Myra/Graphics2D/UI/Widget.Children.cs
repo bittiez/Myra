@@ -52,7 +52,16 @@ namespace Myra.Graphics2D.UI
 			}
 			else if (args.Action == NotifyCollectionChangedAction.Reset)
 			{
-				foreach (Widget w in ChildrenCopy)
+				// ObservableCollection<T>.Clear() raises Reset without OldItems, so there's no
+				// way to recover what was removed from the event args themselves. Reading the
+				// ChildrenCopy *property* here would call UpdateChildren(), which rebuilds
+				// _childrenCopy from Children - but Children has already been cleared by the
+				// time this handler runs, so that always rebuilds to empty and OnChildRemoved
+				// never fires for anything. Read the private _childrenCopy *field* instead: it
+				// still holds whatever was live as of the last UpdateChildren() call, i.e. the
+				// pre-clear content. Snapshot it (ToArray) since OnChildRemoved runs arbitrary
+				// overridden code that must not be able to corrupt the list out from under us.
+				foreach (Widget w in _childrenCopy.ToArray())
 				{
 					OnChildRemoved(w);
 				}
@@ -84,7 +93,16 @@ namespace Myra.Graphics2D.UI
 
 			for (var i = 0; i < Children.Count; ++i)
 			{
-				_childrenCopy.Add(Children[i]);
+				// Defensive: Children is only ever supposed to hold real widgets, but if
+				// something upstream ever manages to slip a null in (bulk Clear()/Reset
+				// bookkeeping bugs have historically left this collection in inconsistent
+				// states - see ChildrenOnCollectionChanged), skip it here rather than let it
+				// blow up SortWidgetsByZIndex with a NullReferenceException later.
+				var child = Children[i];
+				if (child != null)
+				{
+					_childrenCopy.Add(child);
+				}
 			}
 
 			_childrenCopy.SortWidgetsByZIndex();

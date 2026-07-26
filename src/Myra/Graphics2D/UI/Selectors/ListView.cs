@@ -6,6 +6,7 @@ using Myra.Attributes;
 using System.Collections;
 using System.Collections.Generic;
 using Myra.Utility;
+using Myra.Events;
 using System.Reflection;
 
 #if MONOGAME || FNA
@@ -108,7 +109,15 @@ namespace Myra.Graphics2D.UI
 
 			public void Clear()
 			{
+				// RemoveAt/Remove (below) both null out SelectedItem when the removed widget
+				// was the selected one, since the underlying widget is gone. Clear() removes
+				// everything unconditionally but, unlike those, never did this - leaving
+				// _listView.SelectedItem (and its .Parent chain, e.g. the ListViewButton it
+				// points at) referencing a widget no longer reachable via Container.Widgets.
+				// Match RemoveAt/Remove's behavior here so a bulk Clear() can't leave that
+				// stale state behind. The setter already no-ops if SelectedItem is already null.
 				Container.Widgets.Clear();
+				_listView.SelectedItem = null;
 			}
 
 			public bool Contains(object value) => Find((Widget)value) != null;
@@ -345,6 +354,14 @@ namespace Myra.Graphics2D.UI
 
 		public event EventHandler SelectedIndexChanged;
 
+		/// <summary>
+		/// Raised when an item row is clicked, carrying the item widget as added to
+		/// <see cref="Widgets"/>. Unlike <see cref="SelectedIndexChanged"/> this fires even when
+		/// the click landed on the row that was already selected - a selection-changed event
+		/// alone can't be used to act on clicks, since re-clicking the current row is a no-op.
+		/// </summary>
+		public event EventHandler<GenericEventArgs<Widget>> ItemActivated;
+
 		public ListView(string styleName = Stylesheet.DefaultStyleName)
 		{
 			_scrollViewer = new ScrollViewer();
@@ -375,6 +392,8 @@ namespace Myra.Graphics2D.UI
 			{
 				SelectedItem = button.Content;
 			}
+
+			ItemActivated.Invoke(this, button.Content);
 
 			ComboHideDropdown();
 		}
