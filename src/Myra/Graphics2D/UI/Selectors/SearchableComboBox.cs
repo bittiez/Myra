@@ -2,6 +2,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Xml.Serialization;
@@ -36,7 +38,7 @@ namespace Myra.Graphics2D.UI
 		/// <summary>Empty space, in pixels, kept above and below the header divider.</summary>
 		private const int DividerSpacing = 4;
 
-		private readonly List<T> _items = new();
+		private readonly ObservableCollection<T> _items = new();
 		private readonly List<T> _visibleItems = new();
 		private readonly ToggleButton _button;
 		private readonly SearchInputBox _searchBox;
@@ -54,6 +56,9 @@ namespace Myra.Graphics2D.UI
 		private ISearchStrategy _strategy;
 		private string _searchText = string.Empty;
 		private bool _showSearchDivider = true;
+		private int? _contentWidth;
+		private bool _filterDirty = true;
+		private Func<T, string> _textSelector = DefaultTextSelector;
 
 		/// <summary>
 		/// The Desktop this widget lives on. Overridden to close the dropdown and move the
@@ -91,8 +96,7 @@ namespace Myra.Graphics2D.UI
 		/// <summary>
 		/// The full, unfiltered item list, in the order they were added - which is also the order
 		/// equally-scoring matches appear in, and what <see cref="SelectedIndex"/> indexes into.
-		/// Add or remove items here, then call <see cref="InvalidateFilter"/> if the dropdown is
-		/// already open.
+		/// The dropdown tracks changes to it on its own.
 		/// </summary>
 		[Browsable(false)]
 		[XmlIgnore]
@@ -104,7 +108,16 @@ namespace Myra.Graphics2D.UI
 		/// </summary>
 		[Browsable(false)]
 		[XmlIgnore]
-		public Func<T, string> TextSelector { get; set; } = DefaultTextSelector;
+		public Func<T, string> TextSelector
+		{
+			get => _textSelector;
+
+			set
+			{
+				_textSelector = value;
+				InvalidateContentWidth();
+			}
+		}
 
 		/// <summary>
 		/// Optional per-item tooltip text. Items whose selector returns null or empty get no
@@ -442,6 +455,7 @@ namespace Myra.Graphics2D.UI
 			VerticalAlignment = VerticalAlignment.Top;
 
 			_strategy = CreateDefaultStrategy();
+			_items.CollectionChanged += ItemsOnCollectionChanged;
 
 			SetStyle(styleName);
 		}
@@ -577,7 +591,7 @@ namespace Myra.Graphics2D.UI
 			}
 
 			EnsurePopupContent();
-			InvalidateFilter();
+			RebuildFilterIfDirty();
 
 			_popup.Width = BorderBounds.Width;
 			var pos = ToGlobal(new Point(0, Bounds.Height));
@@ -650,14 +664,41 @@ namespace Myra.Graphics2D.UI
 				_baseHeaderMargin.Bottom + extraBottom);
 		}
 
+		private void ItemsOnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+		{
+			InvalidateContentWidth();
+			InvalidateFilter();
+		}
+
 		/// <summary>
-		/// Rebuilds the dropdown's rows from the current query and item list, swapping in the
-		/// no-results text when nothing matches and highlighting the best match. Call it after
-		/// changing <see cref="Items"/> or anything the active strategy scores by; changes to
-		/// <see cref="SearchText"/> and <see cref="Strategy"/> already do.
+		/// Marks the dropdown's rows stale, to be rebuilt from the current query and item list
+		/// before it is next shown. Call it after changing anything the active strategy scores by;
+		/// changes to <see cref="Items"/>, <see cref="SearchText"/> and <see cref="Strategy"/>
+		/// already do.
 		/// </summary>
 		protected void InvalidateFilter()
 		{
+			_filterDirty = true;
+
+			// Rebuilding is O(items) and allocates a widget per match, so a closed dropdown just
+			// takes the flag - that way bulk item edits cost one rebuild at Open(), not one each.
+			if (IsExpanded)
+			{
+				RebuildFilter();
+			}
+		}
+
+		private void RebuildFilterIfDirty()
+		{
+			if (_filterDirty)
+			{
+				RebuildFilter();
+			}
+		}
+
+		private void RebuildFilter()
+		{
+			_filterDirty = false;
 			_visibleItems.Clear();
 			_listView.Widgets.Clear();
 
@@ -847,6 +888,13 @@ namespace Myra.Graphics2D.UI
 		/// </summary>
 		private int MeasureFullContentWidth()
 		{
+			// Heavyweight: a widget per item, plus a swap of the live list. Re-filtering invalidates
+			// the popup's layout, so without this it would rerun on every keystroke.
+			if (_contentWidth != null)
+			{
+				return _contentWidth.Value;
+			}
+
 			// WidgetsCollection.CopyTo throws NotImplementedException, so `new List<>(...)`
 			// (which prefers ICollection<T>.CopyTo over enumerating) crashes here — build the
 			// snapshot with an explicit loop instead, which only needs the enumerator.
@@ -858,6 +906,9 @@ namespace Myra.Graphics2D.UI
 
 			var savedWidth = _popup.Width;
 			var wasVisible = _popup.Visible;
+			// Clear() drops the selection and the restore loop re-wraps every row in a fresh
+			// ListViewButton, so the highlight can't survive the swap on its own.
+			var savedSelectedIndex = _listView.SelectedIndex;
 
 			_popup.Width = null;
 			_popup.Visible = true;
@@ -876,10 +927,28 @@ namespace Myra.Graphics2D.UI
 				_listView.Widgets.Add(widget);
 			}
 
+			if (savedSelectedIndex != null && savedSelectedIndex.Value < filteredWidgets.Count)
+			{
+				_listView.SelectedIndex = savedSelectedIndex;
+			}
+
 			_popup.Width = savedWidth;
 			_popup.Visible = wasVisible;
 
+			_contentWidth = measured.X;
+
 			return measured.X;
+		}
+
+		/// <summary>
+		/// Drops the cached full-content width, so the next measure pass recomputes how wide the
+		/// widget has to be to fit its widest item. <see cref="Items"/> changes do this on their
+		/// own; call it after anything else that changes an item's rendered width.
+		/// </summary>
+		protected void InvalidateContentWidth()
+		{
+			_contentWidth = null;
+			InvalidateMeasure();
 		}
 
 		/// <summary>
@@ -918,45 +987,52 @@ namespace Myra.Graphics2D.UI
 		{
 			if (style.ListBoxStyle != null)
 			{
-				var dropdownMaximumHeight = DropdownMaximumHeight;
-				_listView.ApplyListBoxStyle(style.ListBoxStyle);
-				DropdownMaximumHeight = dropdownMaximumHeight;
+				ApplyDropdownListStyle(style.ListBoxStyle);
 
-				// The popup is a panel around the list (header + no-results text live outside
-				// _listView's own bounds), so without this it has no background/border of its
-				// own and renders as if the search box and rows were floating over nothing.
+				// The header and no-results text live outside _listView's bounds, so the frame has
+				// to be on the popup or they render over nothing.
 				_popup.Background = style.ListBoxStyle.Background;
 				_popup.Border = style.ListBoxStyle.Border;
 				_popup.BorderThickness = style.ListBoxStyle.BorderThickness;
 
-				// Only follow the style's border color if it defines one - TazUO's combo skin
-				// leaves ListBoxStyle.Border null, and taking that would blank the divider's
-				// constructor fallback and make the line disappear entirely.
+				// TazUO's combo skin leaves these unset; taking them anyway would blank the
+				// divider and stomp the constructor's padding default.
 				if (style.ListBoxStyle.Border != null)
 				{
 					_headerDivider.Background = style.ListBoxStyle.Border;
 				}
 
-				// Only take the style's padding if it actually defines one - TazUO's combo
-				// skin leaves ListBoxStyle.Padding at zero, and that shouldn't stomp the
-				// built-in default set in the constructor.
 				Thickness stylePadding = style.ListBoxStyle.Padding;
 				if (stylePadding.Left > 0 || stylePadding.Right > 0 || stylePadding.Top > 0 || stylePadding.Bottom > 0)
 				{
 					_popup.Padding = stylePadding;
 				}
-
-				// _listView just got that same background/border/padding from
-				// ApplyListBoxStyle above (it's meant to stand alone under ComboView). Clear
-				// its copy so the popup is a single bordered panel instead of a bordered
-				// panel with a second, differently-inset bordered panel nested inside it.
-				_listView.Background = null;
-				_listView.Border = null;
-				_listView.BorderThickness = Thickness.Zero;
-				_listView.Padding = Thickness.Zero;
+			}
+			else if (_listView.ListBoxStyle == null)
+			{
+				// ListView.Wrap() dereferences ListBoxStyle on every row added, and the list is
+				// built style-less on purpose - fall back so adding items can't NRE.
+				ApplyDropdownListStyle(Stylesheet.Current.ListBoxStyles.SafelyGetStyle(Stylesheet.DefaultStyleName));
 			}
 
+			// Fonts and metrics just moved, so the cached width no longer describes the items.
+			InvalidateContentWidth();
+
 			_button.ApplyButtonStyle(style);
+		}
+
+		// ApplyListBoxStyle stomps MaxHeight (the dropdown's height cap) and gives the list a frame
+		// meant for a standalone ComboView list, which would nest inside the popup's own.
+		private void ApplyDropdownListStyle(ListBoxStyle listBoxStyle)
+		{
+			var dropdownMaximumHeight = DropdownMaximumHeight;
+			_listView.ApplyListBoxStyle(listBoxStyle);
+			DropdownMaximumHeight = dropdownMaximumHeight;
+
+			_listView.Background = null;
+			_listView.Border = null;
+			_listView.BorderThickness = Thickness.Zero;
+			_listView.Padding = Thickness.Zero;
 		}
 
 		/// <summary>
@@ -970,8 +1046,9 @@ namespace Myra.Graphics2D.UI
 		}
 
 		/// <summary>
-		/// Copies another searchable combo box's settings, items and selection onto this one. The
-		/// item references themselves are shared, not cloned.
+		/// Replaces this combo box's settings, items and selection with another's. The item
+		/// references themselves are shared, not cloned; <see cref="Strategy"/> is cloned, since it
+		/// is mutable and the two widgets must be able to be retuned independently.
 		/// </summary>
 		/// <param name="w">The widget to copy from. Must be a <see cref="SearchableComboBox{T}"/> of the same item type.</param>
 		protected internal override void CopyFrom(Widget w)
@@ -995,8 +1072,9 @@ namespace Myra.Graphics2D.UI
 			PopupPadding = other.PopupPadding;
 			ShowSearchDivider = other.ShowSearchDivider;
 			SearchDividerBrush = other.SearchDividerBrush;
-			Strategy = other.Strategy;
+			Strategy = other.Strategy.Clone();
 
+			_items.Clear();
 			foreach (T item in other._items)
 			{
 				_items.Add(item);

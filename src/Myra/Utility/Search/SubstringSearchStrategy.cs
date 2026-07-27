@@ -38,5 +38,8 @@ namespace Myra.Utility.Search
 
 			return new SearchMatch(true, 1d, new (int Start, int Len)[] { (idx, query.Length) });
 		}
+
+		/// <inheritdoc />
+		public ISearchStrategy Clone() => (ISearchStrategy)MemberwiseClone();
 	}
 }

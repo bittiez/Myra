@@ -109,13 +109,9 @@ namespace Myra.Graphics2D.UI
 
 			public void Clear()
 			{
-				// RemoveAt/Remove (below) both null out SelectedItem when the removed widget
-				// was the selected one, since the underlying widget is gone. Clear() removes
-				// everything unconditionally but, unlike those, never did this - leaving
-				// _listView.SelectedItem (and its .Parent chain, e.g. the ListViewButton it
-				// points at) referencing a widget no longer reachable via Container.Widgets.
-				// Match RemoveAt/Remove's behavior here so a bulk Clear() can't leave that
-				// stale state behind. The setter already no-ops if SelectedItem is already null.
+				// RemoveAt/Remove (below) both null out SelectedItem when the removed widget was
+				// the selected one; without the same here a bulk Clear() leaves SelectedItem
+				// pointing at a widget no longer reachable from Container.Widgets.
 				Container.Widgets.Clear();
 				_listView.SelectedItem = null;
 			}

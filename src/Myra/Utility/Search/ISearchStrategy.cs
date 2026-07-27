@@ -25,5 +25,15 @@ namespace Myra.Utility.Search
 		/// <param name="query">The query to validate.</param>
 		/// <returns>True when the query can be matched with.</returns>
 		bool IsQueryValid(string query) => true;
+
+		/// <summary>
+		/// Returns an independent strategy with the same configuration. Strategies are mutable, so
+		/// widgets copying one another (see <c>SearchableComboBox&lt;T&gt;.CopyFrom</c>) clone rather
+		/// than share - otherwise retuning one widget's search silently retunes the other's.
+		/// Implementations must not share mutable state with the original; immutable state (a
+		/// compiled <c>Regex</c>, a delegate) is fine to share.
+		/// </summary>
+		/// <returns>A copy of this strategy.</returns>
+		ISearchStrategy Clone();
 	}
 }

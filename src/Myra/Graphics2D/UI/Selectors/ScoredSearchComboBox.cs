@@ -1,5 +1,6 @@
 #nullable enable
 
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -30,8 +31,10 @@ namespace Myra.Graphics2D.UI
 		/// </summary>
 		/// <param name="strategy">Strategy used to match and score items. Required - this class has no fallback.</param>
 		/// <param name="styleName">Name of the stylesheet's combo box style to apply.</param>
+		/// <exception cref="ArgumentNullException"><paramref name="strategy"/> is null.</exception>
 		public ScoredSearchComboBox(ISearchStrategy strategy, string styleName = Stylesheet.DefaultStyleName) : base(styleName)
 		{
+			ArgumentNullException.ThrowIfNull(strategy);
 			Strategy = strategy;
 		}
 

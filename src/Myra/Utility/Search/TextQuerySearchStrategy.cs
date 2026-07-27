@@ -81,6 +81,11 @@ namespace Myra.Utility.Search
 			return new SearchMatch(true, 1d, new (int Start, int Len)[] { (m.Index, m.Length) });
 		}
 
+		/// <inheritdoc />
+		// The copied regex cache stays valid: Regex is immutable, and the cache keys come across
+		// with it.
+		public ISearchStrategy Clone() => (ISearchStrategy)MemberwiseClone();
+
 		private void EnsureRegex(string query)
 		{
 			if (_cacheReady
