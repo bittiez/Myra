@@ -19,21 +19,45 @@ namespace Myra.Utility.Search
 		private bool _cachedValid;
 		private bool _cacheReady;
 
+		/// <summary>Whether matching is case-sensitive. Off by default.</summary>
 		[DefaultValue(false)]
 		public bool CaseSensitive { get; set; }
 
+		/// <summary>
+		/// Whether the query must match on word boundaries (it gets wrapped in <c>\b...\b</c>).
+		/// Off by default. Combines with <see cref="UseRegex"/>.
+		/// </summary>
 		[DefaultValue(false)]
 		public bool WholeWord { get; set; }
 
+		/// <summary>
+		/// Whether the query is a regular expression. Off by default, in which case the query is
+		/// escaped and matched literally.
+		/// </summary>
 		[DefaultValue(false)]
 		public bool UseRegex { get; set; }
 
+		/// <summary>
+		/// Whether <paramref name="query"/> compiles. Only ever false with <see cref="UseRegex"/>
+		/// on and a malformed pattern; literal queries are always valid.
+		/// </summary>
+		/// <param name="query">The query to validate.</param>
+		/// <returns>True when the query can be matched with.</returns>
 		public bool IsQueryValid(string query)
 		{
 			EnsureRegex(query);
 			return _cachedValid;
 		}
 
+		/// <summary>
+		/// Matches <paramref name="candidate"/> against <paramref name="query"/>, honouring
+		/// <see cref="CaseSensitive"/>, <see cref="WholeWord"/> and <see cref="UseRegex"/>. All
+		/// hits score 1 - the query either matches or it doesn't - so callers ranking by score
+		/// alone keep the candidates' original order.
+		/// </summary>
+		/// <param name="candidate">The text being searched.</param>
+		/// <param name="query">The query to look for. An empty query matches everything; a malformed regex matches nothing.</param>
+		/// <returns>A match carrying the span of the first hit, or <see cref="SearchMatch.None"/>.</returns>
 		public SearchMatch Match(string candidate, string query)
 		{
 			if (string.IsNullOrEmpty(query))

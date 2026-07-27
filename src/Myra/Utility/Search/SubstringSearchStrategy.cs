@@ -10,9 +10,18 @@ namespace Myra.Utility.Search
 	/// </summary>
 	public class SubstringSearchStrategy : ISearchStrategy
 	{
+		/// <summary>Whether the comparison is case-sensitive. Off by default.</summary>
 		[DefaultValue(false)]
 		public bool CaseSensitive { get; set; }
 
+		/// <summary>
+		/// Matches when <paramref name="query"/> occurs anywhere in <paramref name="candidate"/>.
+		/// All hits score 1 - there's no notion of a better or worse substring match - so callers
+		/// ranking by score alone keep the candidates' original order.
+		/// </summary>
+		/// <param name="candidate">The text being searched.</param>
+		/// <param name="query">The substring to look for. An empty query matches everything.</param>
+		/// <returns>A match carrying the span of the first occurrence, or <see cref="SearchMatch.None"/>.</returns>
 		public SearchMatch Match(string candidate, string query)
 		{
 			if (string.IsNullOrEmpty(query))

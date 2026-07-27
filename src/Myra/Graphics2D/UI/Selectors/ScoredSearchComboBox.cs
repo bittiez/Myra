@@ -17,15 +17,30 @@ namespace Myra.Graphics2D.UI
 	/// </summary>
 	public class ScoredSearchComboBox<T> : SearchableComboBox<T>
 	{
+		/// <summary>
+		/// Lowest <see cref="SearchMatch.Score"/> a match needs to stay in the dropdown. Zero (the
+		/// default) keeps everything the strategy matched; raising it trims weak fuzzy hits.
+		/// </summary>
 		[Category("Behavior")]
 		[DefaultValue(0d)]
 		public double MinScore { get; set; }
 
+		/// <summary>
+		/// Creates the combo box.
+		/// </summary>
+		/// <param name="strategy">Strategy used to match and score items. Required - this class has no fallback.</param>
+		/// <param name="styleName">Name of the stylesheet's combo box style to apply.</param>
 		public ScoredSearchComboBox(ISearchStrategy strategy, string styleName = Stylesheet.DefaultStyleName) : base(styleName)
 		{
 			Strategy = strategy;
 		}
 
+		/// <summary>
+		/// Filters and orders as the base class does, then drops anything scoring below
+		/// <see cref="MinScore"/>.
+		/// </summary>
+		/// <param name="query">The current search text.</param>
+		/// <returns>The matching items with their matches, best-scoring first.</returns>
 		protected override IEnumerable<(T Item, SearchMatch Match)> FilterAndOrder(string query)
 		{
 			return base.FilterAndOrder(query).Where(r => r.Match.Score >= MinScore);

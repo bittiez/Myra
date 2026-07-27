@@ -13,16 +13,29 @@ namespace Myra.Graphics2D.UI
 	{
 		private TextQuerySearchStrategy? _textStrategy;
 
+		/// <summary>
+		/// Creates the combo box.
+		/// </summary>
+		/// <param name="styleName">Name of the stylesheet's combo box style to apply.</param>
 		public TextSearchComboBox(string styleName = Stylesheet.DefaultStyleName) : base(styleName)
 		{
 		}
 
+		/// <summary>
+		/// Creates the <see cref="TextQuerySearchStrategy"/> the header's toggle buttons drive.
+		/// </summary>
+		/// <returns>The strategy to search with.</returns>
 		protected override ISearchStrategy CreateDefaultStrategy()
 		{
 			_textStrategy = new TextQuerySearchStrategy();
 			return _textStrategy;
 		}
 
+		/// <summary>
+		/// Builds the search box plus the case-sensitive, whole-word and regex toggles, each wired
+		/// to the matching <see cref="TextQuerySearchStrategy"/> flag.
+		/// </summary>
+		/// <returns>The widget to use as the dropdown's header.</returns>
 		protected override Widget BuildSearchHeader()
 		{
 			var header = new HorizontalStackPanel
@@ -81,8 +94,15 @@ namespace Myra.Graphics2D.UI
 		}
 	}
 
+	/// <summary>
+	/// <see cref="TextSearchComboBox{T}"/> over plain strings.
+	/// </summary>
 	public class TextSearchComboBox : TextSearchComboBox<string>
 	{
+		/// <summary>
+		/// Creates the combo box.
+		/// </summary>
+		/// <param name="styleName">Name of the stylesheet's combo box style to apply.</param>
 		public TextSearchComboBox(string styleName = Stylesheet.DefaultStyleName) : base(styleName)
 		{
 		}
