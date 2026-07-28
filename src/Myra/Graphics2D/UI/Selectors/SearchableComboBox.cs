@@ -441,8 +441,12 @@ namespace Myra.Graphics2D.UI
 
 			_listView = new ListView(null)
 			{
-				MaxHeight = 300
+				// Popup width is pinned to the button; without this the list shrinks to the
+				// filtered rows and drags every row narrow with it.
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				MaxHeight = 300, // A default value; Can be overridden by consumers via DropdownMaximumHeight 
 			};
+
 			_listView.ScrollViewer.ShowHorizontalScrollBar = false;
 
 			// Commit on activation, not on SelectedIndexChanged: the filter pre-selects the top

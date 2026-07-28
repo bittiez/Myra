@@ -100,6 +100,46 @@ namespace Myra.Tests
 			CollectionAssert.AreEqual(new[] { "beta" }, combo.VisibleItems);
 		}
 
+		/// <summary>
+		/// Regression: the list defaulted to HorizontalAlignment.Left, so it only looked full-width
+		/// while unfiltered - narrowing it narrowed every row.
+		/// </summary>
+		[Test]
+		public void FilteredRowsKeepTheFullDropdownWidth()
+		{
+			var combo = new SearchableComboBox<string>();
+			combo.Items.Add("a considerably longer item than the others");
+			combo.Items.Add("xy");
+
+			var desktop = ShowOnDesktop(combo);
+			combo.Open();
+			desktop.UpdateLayout();
+
+			int unfilteredRowWidth = RowWidths(desktop).Max();
+
+			combo.SearchText = "xy";
+			desktop.UpdateLayout();
+
+			CollectionAssert.AreEqual(new[] { "xy" }, combo.VisibleItems);
+			Assert.AreEqual(unfilteredRowWidth, RowWidths(desktop).Single());
+		}
+
+		private static List<int> RowWidths(Desktop desktop)
+		{
+			var contextMenu = desktop.ContextMenu;
+			Assert.IsNotNull(contextMenu, "dropdown is not open");
+
+			var widths = contextMenu!
+				.GetChildren(recursive: true)
+				.OfType<ListViewButton>()
+				.Select(b => b.Bounds.Width)
+				.ToList();
+
+			CollectionAssert.IsNotEmpty(widths, "dropdown has no rows");
+
+			return widths;
+		}
+
 		[Test]
 		public void DefaultSearchIsCaseInsensitiveSubstring()
 		{
