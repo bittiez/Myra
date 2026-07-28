@@ -163,6 +163,10 @@ namespace Myra.Graphics2D.UI
 		/// count as the user committing a choice, so
 		/// <see cref="OnSelectionCommitted"/> isn't called - but
 		/// <see cref="SelectedItemChanged"/> still fires.
+		/// <para>
+		/// Resolved by value, so with equal items in <see cref="Items"/> this reports the first
+		/// occurrence regardless of which one was selected.
+		/// </para>
 		/// </summary>
 		[Browsable(false)]
 		[XmlIgnore]
@@ -726,6 +730,14 @@ namespace Myra.Graphics2D.UI
 		private void ItemsOnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
 		{
 			InvalidateContentWidth();
+
+			// Otherwise removing the selected item leaves HasSelection true, a stale SelectedItem
+			// and a null SelectedIndex, with the button still showing the removed item's text.
+			if (_hasSelection && _items.IndexOf(SelectedItem!) < 0)
+			{
+				SetSelectedItem(default, false, false);
+			}
+
 			InvalidateFilter();
 		}
 

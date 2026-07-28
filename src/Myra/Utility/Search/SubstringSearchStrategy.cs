@@ -40,6 +40,10 @@ namespace Myra.Utility.Search
 		}
 
 		/// <inheritdoc />
+		/// <remarks>Any string is a valid substring query.</remarks>
+		public bool IsQueryValid(string query) => true;
+
+		/// <inheritdoc />
 		public ISearchStrategy Clone() => (ISearchStrategy)MemberwiseClone();
 	}
 }

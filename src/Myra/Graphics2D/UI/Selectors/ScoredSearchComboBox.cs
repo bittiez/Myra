@@ -34,7 +34,12 @@ namespace Myra.Graphics2D.UI
 		/// <exception cref="ArgumentNullException"><paramref name="strategy"/> is null.</exception>
 		public ScoredSearchComboBox(ISearchStrategy strategy, string styleName = Stylesheet.DefaultStyleName) : base(styleName)
 		{
-			ArgumentNullException.ThrowIfNull(strategy);
+			// ArgumentNullException.ThrowIfNull isn't available in netstandard2.0.
+			if (strategy == null)
+			{
+				throw new ArgumentNullException(nameof(strategy));
+			}
+
 			Strategy = strategy;
 		}
 

@@ -20,11 +20,12 @@ namespace Myra.Utility.Search
 		/// Whether <paramref name="query"/> is well-formed for this strategy - false for, say, a
 		/// malformed pattern in a regex-based strategy. Callers can use this to flag bad input
 		/// instead of silently showing no results. Strategies that can't reject a query at all
-		/// (the default) always return true.
+		/// return true unconditionally.
 		/// </summary>
 		/// <param name="query">The query to validate.</param>
 		/// <returns>True when the query can be matched with.</returns>
-		bool IsQueryValid(string query) => true;
+		// Note that while this can be a default interface impl, netstandard2.0 doesn't support it.
+		bool IsQueryValid(string query);
 
 		/// <summary>
 		/// Returns an independent strategy with the same configuration. Strategies are mutable, so

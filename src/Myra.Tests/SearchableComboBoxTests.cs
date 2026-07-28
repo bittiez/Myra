@@ -33,6 +33,8 @@ namespace Myra.Tests
 				return SearchMatch.Exact(score);
 			}
 
+			public bool IsQueryValid(string query) => true;
+
 			public ISearchStrategy Clone() => new TableSearchStrategy(new Dictionary<string, double>(_scores));
 		}
 
@@ -298,6 +300,54 @@ namespace Myra.Tests
 			Assert.AreEqual(1, combo.SelectedIndex);
 			Assert.AreEqual("beta", combo.SelectedItem);
 			Assert.IsTrue(combo.HasSelection);
+		}
+
+		[Test]
+		public void RemovingTheSelectedItemClearsTheSelection()
+		{
+			var combo = CreateOpenedComboBox("alpha", "beta");
+			combo.SelectedIndex = 1;
+
+			var changedTo = "sentinel";
+			var raised = 0;
+			combo.SelectedItemChanged += (_, e) =>
+			{
+				changedTo = e.NewValue;
+				++raised;
+			};
+
+			combo.Items.Remove("beta");
+
+			Assert.IsFalse(combo.HasSelection);
+			Assert.IsNull(combo.SelectedIndex);
+			Assert.IsNull(combo.SelectedItem);
+			Assert.AreEqual(1, raised);
+			Assert.IsNull(changedTo);
+		}
+
+		[Test]
+		public void RemovingAnUnselectedItemKeepsTheSelection()
+		{
+			var combo = CreateOpenedComboBox("alpha", "beta");
+			combo.SelectedIndex = 1;
+
+			combo.Items.Remove("alpha");
+
+			Assert.IsTrue(combo.HasSelection);
+			Assert.AreEqual("beta", combo.SelectedItem);
+			Assert.AreEqual(0, combo.SelectedIndex);
+		}
+
+		[Test]
+		public void ClearingItemsClearsTheSelection()
+		{
+			var combo = CreateOpenedComboBox("alpha", "beta");
+			combo.SelectedIndex = 1;
+
+			combo.Items.Clear();
+
+			Assert.IsFalse(combo.HasSelection);
+			Assert.IsNull(combo.SelectedIndex);
 		}
 
 		[Test]
