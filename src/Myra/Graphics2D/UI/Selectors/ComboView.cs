@@ -173,7 +173,10 @@ namespace Myra.Graphics2D.UI
 
 		internal void UpdateSelectedItem()
 		{
-			_button.Content = SelectedItem.Clone();
+			// The selection is nulled out whenever the selected row is removed - including by a
+			// bulk Widgets.Clear(), the usual way of repopulating a combo - so this runs with no
+			// selected item routinely and must not dereference it.
+			_button.Content = SelectedItem?.Clone();
 		}
 
 		public void ApplyComboViewStyle(ComboBoxStyle style)

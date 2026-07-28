@@ -11,6 +11,14 @@ namespace Myra.Utility.Search
 	/// </summary>
 	public class TextQuerySearchStrategy : ISearchStrategy
 	{
+		/// <summary>
+		/// Ceiling on a single <see cref="Regex.Match(string)"/>. The query is user input matched
+		/// on the UI thread once per candidate per keystroke, so a pattern that backtracks
+		/// catastrophically (<c>(a+)+$</c> and friends) has to be cut off rather than allowed to
+		/// hang the application; a timed-out match is reported as a non-match.
+		/// </summary>
+		private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(500);
+
 		private string? _cachedQuery;
 		private bool _cachedCaseSensitive;
 		private bool _cachedWholeWord;
@@ -72,7 +80,18 @@ namespace Myra.Utility.Search
 				return SearchMatch.None;
 			}
 
-			var m = _cachedRegex.Match(candidate);
+			System.Text.RegularExpressions.Match m;
+			try
+			{
+				m = _cachedRegex.Match(candidate);
+			}
+			catch (RegexMatchTimeoutException)
+			{
+				// See MatchTimeout: a pathological pattern is reported as a non-match rather
+				// than allowed to wedge the thread it was typed on.
+				return SearchMatch.None;
+			}
+
 			if (!m.Success)
 			{
 				return SearchMatch.None;
@@ -106,14 +125,17 @@ namespace Myra.Utility.Search
 			string pattern = UseRegex ? query : Regex.Escape(query);
 			if (WholeWord)
 			{
-				pattern = $@"\b{pattern}\b";
+				// Non-capturing group, not bare concatenation: `\b` binds tighter than `|`, so
+				// wrapping `cat|dog` as `\bcat|dog\b` would only word-anchor the first and last
+				// branch. Harmless for an escaped literal, required for a user-typed regex.
+				pattern = $@"\b(?:{pattern})\b";
 			}
 
 			RegexOptions options = CaseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
 
 			try
 			{
-				_cachedRegex = new Regex(pattern, options);
+				_cachedRegex = new Regex(pattern, options, MatchTimeout);
 				_cachedValid = true;
 			}
 			catch (ArgumentException)

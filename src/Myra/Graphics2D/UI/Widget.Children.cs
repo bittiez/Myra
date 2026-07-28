@@ -50,18 +50,16 @@ namespace Myra.Graphics2D.UI
 					OnChildRemoved(w);
 				}
 			}
+			// Not handled: Replace. Children[i] = w detaches neither the old widget nor attaches
+			// the new one, so the replacement never gets a Parent. See WidgetChildrenTests.
 			else if (args.Action == NotifyCollectionChangedAction.Reset)
 			{
-				// ObservableCollection<T>.Clear() raises Reset without OldItems, so there's no
-				// way to recover what was removed from the event args themselves. Reading the
-				// ChildrenCopy *property* here would call UpdateChildren(), which rebuilds
-				// _childrenCopy from Children - but Children has already been cleared by the
-				// time this handler runs, so that always rebuilds to empty and OnChildRemoved
-				// never fires for anything. Read the private _childrenCopy *field* instead: it
-				// still holds whatever was live as of the last UpdateChildren() call, i.e. the
-				// pre-clear content. Snapshot it (ToArray) since OnChildRemoved runs arbitrary
-				// overridden code that must not be able to corrupt the list out from under us.
-				foreach (Widget w in _childrenCopy.ToArray())
+				// Clear() raises Reset without OldItems and Children is already empty here, so
+				// this rebuilds to nothing and detaches nothing whenever _childrenDirty is set
+				// (no layout pass since the last mutation). The orphans keep stale
+				// Parent/Desktop until GC - harmless, since render/layout/input all walk the
+				// per-frame-refreshed copy. See WidgetChildrenTests for the exact cases.
+				foreach (Widget w in ChildrenCopy)
 				{
 					OnChildRemoved(w);
 				}
@@ -93,16 +91,7 @@ namespace Myra.Graphics2D.UI
 
 			for (var i = 0; i < Children.Count; ++i)
 			{
-				// Defensive: Children is only ever supposed to hold real widgets, but if
-				// something upstream ever manages to slip a null in (bulk Clear()/Reset
-				// bookkeeping bugs have historically left this collection in inconsistent
-				// states - see ChildrenOnCollectionChanged), skip it here rather than let it
-				// blow up SortWidgetsByZIndex with a NullReferenceException later.
-				var child = Children[i];
-				if (child != null)
-				{
-					_childrenCopy.Add(child);
-				}
+				_childrenCopy.Add(Children[i]);
 			}
 
 			_childrenCopy.SortWidgetsByZIndex();

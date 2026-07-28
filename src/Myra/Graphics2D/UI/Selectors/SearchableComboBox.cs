@@ -58,6 +58,8 @@ namespace Myra.Graphics2D.UI
 		private bool _showSearchDivider = true;
 		private int? _contentWidth;
 		private bool _filterDirty = true;
+		private bool _hasSelection;
+		private bool _opening;
 		private Func<T, string> _textSelector = DefaultTextSelector;
 
 		/// <summary>
@@ -103,6 +105,16 @@ namespace Myra.Graphics2D.UI
 		public IList<T> Items => _items;
 
 		/// <summary>
+		/// The items currently listed in the dropdown - what survived the query, ordering and
+		/// <see cref="MaxVisibleResults"/> - in the order they are shown. Only meaningful once the
+		/// dropdown has been filtered at least once (see <see cref="InvalidateFilter"/>), which a
+		/// closed dropdown defers until it opens.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public IReadOnlyList<T> VisibleItems => _visibleItems;
+
+		/// <summary>
 		/// Maps an item to the text shown for it and searched against. Defaults to
 		/// <c>ToString()</c> (empty for null).
 		/// </summary>
@@ -129,11 +141,21 @@ namespace Myra.Graphics2D.UI
 
 		/// <summary>
 		/// The currently selected item, or default when nothing is selected. Set it through
-		/// <see cref="SelectedIndex"/>.
+		/// <see cref="SelectedIndex"/>. Since default is a legitimate value for a value-type
+		/// <typeparamref name="T"/>, use <see cref="HasSelection"/> to tell "nothing selected"
+		/// apart from "zero selected".
 		/// </summary>
 		[Browsable(false)]
 		[XmlIgnore]
 		public T? SelectedItem { get; private set; }
+
+		/// <summary>
+		/// Whether anything is selected at all. The distinction matters for a value-type
+		/// <typeparamref name="T"/>, whose <see cref="SelectedItem"/> can never be null.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public bool HasSelection => _hasSelection;
 
 		/// <summary>
 		/// Index of the selected item within <see cref="Items"/>, or null when nothing is
@@ -148,12 +170,16 @@ namespace Myra.Graphics2D.UI
 		{
 			get
 			{
-				if (SelectedItem == null)
+				// Deliberately not `SelectedItem == null`: that boxes an unconstrained T and is
+				// always false for a value type, which would report index 0 of `default` (or
+				// whatever position a 0/false/empty-struct item happens to sit at) as the
+				// selection of a combo box nothing has ever been picked in.
+				if (!_hasSelection)
 				{
 					return null;
 				}
 
-				int idx = _items.IndexOf(SelectedItem);
+				int idx = _items.IndexOf(SelectedItem!);
 				return idx < 0 ? null : idx;
 			}
 
@@ -161,11 +187,11 @@ namespace Myra.Graphics2D.UI
 			{
 				if (value == null || value.Value < 0 || value.Value >= _items.Count)
 				{
-					SetSelectedItem(default, false);
+					SetSelectedItem(default, false, false);
 					return;
 				}
 
-				SetSelectedItem(_items[value.Value], false);
+				SetSelectedItem(_items[value.Value], true, false);
 			}
 		}
 
@@ -290,14 +316,20 @@ namespace Myra.Graphics2D.UI
 			set
 			{
 				_strategy = value;
+				OnStrategyChanged();
 				InvalidateFilter();
 			}
 		}
 
-		/// <summary>Whether the dropdown is currently open.</summary>
+		/// <summary>
+		/// Whether the dropdown is currently open. Answered from the popup actually being the
+		/// Desktop's context menu rather than from the toggle button's pressed state - the button
+		/// is only one of the ways the dropdown gets opened, and it can stay pressed after the
+		/// popup is gone (see <see cref="DesktopOnContextMenuClosed"/>).
+		/// </summary>
 		[Browsable(false)]
 		[XmlIgnore]
-		public bool IsExpanded => _button.IsPressed;
+		public bool IsExpanded => Desktop != null && Desktop.ContextMenu == _popup;
 
 		/// <summary>Background of the dropdown popup (header + list + no-results text).</summary>
 		[Category("Appearance")]
@@ -555,20 +587,23 @@ namespace Myra.Graphics2D.UI
 		private void CommitItem(T item)
 		{
 			// Hide the popup BEFORE raising the event: rebuilding the widget tree from
-			// inside a listener while the popup is still open corrupts it.
-			Desktop?.HideContextMenu();
+			// inside a listener while the popup is still open corrupts it. Via Close(), so a
+			// commit driven from the keyboard while some other context menu happens to be up
+			// tears down ours (or nothing) rather than the unrelated menu.
+			Close();
 
-			SetSelectedItem(item, true);
+			SetSelectedItem(item, true, true);
 		}
 
-		private void SetSelectedItem(T? item, bool committed)
+		private void SetSelectedItem(T? item, bool hasSelection, bool committed)
 		{
 			T? old = SelectedItem;
 			SelectedItem = item;
+			_hasSelection = hasSelection;
 
 			_button.Content = new Label
 			{
-				Text = item != null ? TextSelector(item) : string.Empty
+				Text = (hasSelection ? TextSelector(item!) : null) ?? string.Empty
 			};
 
 			if (committed)
@@ -585,10 +620,30 @@ namespace Myra.Graphics2D.UI
 		/// </summary>
 		public void Open()
 		{
-			if (Desktop == null)
+			// _opening: setting IsPressed below re-enters here through ButtonOnPressedChanged, and
+			// the popup is not the context menu yet at that point, so IsExpanded can't be the
+			// guard on its own.
+			if (Desktop == null || _opening || IsExpanded)
 			{
 				return;
 			}
+
+			_opening = true;
+			try
+			{
+				OpenCore();
+			}
+			finally
+			{
+				_opening = false;
+			}
+		}
+
+		private void OpenCore()
+		{
+			// Keeps the button in sync when the dropdown is opened in code rather than by
+			// clicking it, so it doesn't render unpressed over an open popup.
+			_button.IsPressed = true;
 
 			EnsurePopupContent();
 			RebuildFilterIfDirty();
@@ -832,6 +887,16 @@ namespace Myra.Graphics2D.UI
 		/// hook for adjusting the strategy to the new query (fuzziness by query length, say).
 		/// </summary>
 		protected virtual void OnQueryChanged()
+		{
+		}
+
+		/// <summary>
+		/// Called after <see cref="Strategy"/> was replaced and before the list is re-filtered.
+		/// Subclasses exposing controls that drive the strategy (see
+		/// <see cref="TextSearchComboBox{T}"/>'s toggles) rebind them here - otherwise they keep
+		/// driving the strategy that was swapped out.
+		/// </summary>
+		protected virtual void OnStrategyChanged()
 		{
 		}
 

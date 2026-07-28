@@ -1,5 +1,6 @@
 #nullable enable
 
+using System;
 using Myra.Graphics2D.UI.Styles;
 using Myra.Utility.Search;
 
@@ -11,7 +12,10 @@ namespace Myra.Graphics2D.UI
 	/// </summary>
 	public class TextSearchComboBox<T> : SearchableComboBox<T>
 	{
-		private TextQuerySearchStrategy? _textStrategy;
+		private ToggleButton? _caseSensitiveToggle;
+		private ToggleButton? _wholeWordToggle;
+		private ToggleButton? _regexToggle;
+		private bool _syncingToggles;
 
 		/// <summary>
 		/// Creates the combo box.
@@ -22,14 +26,18 @@ namespace Myra.Graphics2D.UI
 		}
 
 		/// <summary>
+		/// The active strategy, when it is one the header's toggles can drive. Null once
+		/// <see cref="SearchableComboBox{T}.Strategy"/> has been replaced with something else - the
+		/// toggles then have nothing to write to and go inactive rather than keep mutating a
+		/// strategy nobody searches with.
+		/// </summary>
+		private TextQuerySearchStrategy? TextStrategy => Strategy as TextQuerySearchStrategy;
+
+		/// <summary>
 		/// Creates the <see cref="TextQuerySearchStrategy"/> the header's toggle buttons drive.
 		/// </summary>
 		/// <returns>The strategy to search with.</returns>
-		protected override ISearchStrategy CreateDefaultStrategy()
-		{
-			_textStrategy = new TextQuerySearchStrategy();
-			return _textStrategy;
-		}
+		protected override ISearchStrategy CreateDefaultStrategy() => new TextQuerySearchStrategy();
 
 		/// <summary>
 		/// Builds the search box plus the case-sensitive, whole-word and regex toggles, each wired
@@ -47,37 +55,58 @@ namespace Myra.Graphics2D.UI
 			searchBoxHost.HorizontalAlignment = HorizontalAlignment.Stretch;
 			header.Widgets.Add(searchBoxHost);
 
-			header.Widgets.Add(CreateToggle(
+			_caseSensitiveToggle = CreateToggle(
 				SearchableComboBoxStrings.Get(SearchableComboBoxStrings.CaseSensitive, "Aa"),
-				_textStrategy!.CaseSensitive,
-				v =>
-				{
-					_textStrategy.CaseSensitive = v;
-					InvalidateFilter();
-				}));
+				TextStrategy?.CaseSensitive ?? false,
+				(s, v) => s.CaseSensitive = v);
 
-			header.Widgets.Add(CreateToggle(
+			_wholeWordToggle = CreateToggle(
 				SearchableComboBoxStrings.Get(SearchableComboBoxStrings.WholeWord, "ab|"),
-				_textStrategy.WholeWord,
-				v =>
-				{
-					_textStrategy.WholeWord = v;
-					InvalidateFilter();
-				}));
+				TextStrategy?.WholeWord ?? false,
+				(s, v) => s.WholeWord = v);
 
-			header.Widgets.Add(CreateToggle(
+			_regexToggle = CreateToggle(
 				SearchableComboBoxStrings.Get(SearchableComboBoxStrings.Regex, ".*"),
-				_textStrategy.UseRegex,
-				v =>
-				{
-					_textStrategy.UseRegex = v;
-					InvalidateFilter();
-				}));
+				TextStrategy?.UseRegex ?? false,
+				(s, v) => s.UseRegex = v);
+
+			header.Widgets.Add(_caseSensitiveToggle);
+			header.Widgets.Add(_wholeWordToggle);
+			header.Widgets.Add(_regexToggle);
 
 			return header;
 		}
 
-		private static ToggleButton CreateToggle(string text, bool initial, System.Action<bool> onChanged)
+		/// <summary>
+		/// Pushes the new strategy's flags onto the toggles, so they show - and go on driving -
+		/// whatever is actually being searched with.
+		/// </summary>
+		protected override void OnStrategyChanged()
+		{
+			base.OnStrategyChanged();
+
+			TextQuerySearchStrategy? strategy = TextStrategy;
+			if (strategy == null || _caseSensitiveToggle == null || _wholeWordToggle == null || _regexToggle == null)
+			{
+				return;
+			}
+
+			// Suppressed: these assignments raise IsToggledChanged, which would write straight
+			// back into the strategy and re-filter three times over for no change.
+			_syncingToggles = true;
+			try
+			{
+				_caseSensitiveToggle.IsToggled = strategy.CaseSensitive;
+				_wholeWordToggle.IsToggled = strategy.WholeWord;
+				_regexToggle.IsToggled = strategy.UseRegex;
+			}
+			finally
+			{
+				_syncingToggles = false;
+			}
+		}
+
+		private ToggleButton CreateToggle(string text, bool initial, Action<TextQuerySearchStrategy, bool> apply)
 		{
 			var button = new ToggleButton
 			{
@@ -88,7 +117,25 @@ namespace Myra.Graphics2D.UI
 				}
 			};
 
-			button.IsToggledChanged += (_, _) => onChanged(button.IsToggled);
+			button.IsToggledChanged += (_, _) =>
+			{
+				if (_syncingToggles)
+				{
+					return;
+				}
+
+				// Resolved per click rather than captured: Strategy can be replaced at any point
+				// (CopyFrom clones it, callers may swap it outright), and the toggle has to drive
+				// the strategy in force now, not the one that existed when the header was built.
+				TextQuerySearchStrategy? strategy = TextStrategy;
+				if (strategy == null)
+				{
+					return;
+				}
+
+				apply(strategy, button.IsToggled);
+				InvalidateFilter();
+			};
 
 			return button;
 		}

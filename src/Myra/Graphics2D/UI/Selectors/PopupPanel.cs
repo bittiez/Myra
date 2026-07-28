@@ -19,12 +19,6 @@ namespace Myra.Graphics2D.UI
 	{
 		public ISearchInputBoxOwner? Owner { get; set; }
 
-		protected internal override void ProcessInput(InputContext inputContext)
-		{
-			bool handledBefore = inputContext.MouseOrTouchHandled;
-			base.ProcessInput(inputContext);
-		}
-
 		public override void OnKeyDown(Keys k)
 		{
 			base.OnKeyDown(k);
