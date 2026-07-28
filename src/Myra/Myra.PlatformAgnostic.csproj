@@ -2,6 +2,8 @@
   <PropertyGroup>
     <DefineConstants>$(DefineConstants);PLATFORM_AGNOSTIC</DefineConstants>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- netstandard2.0 would otherwise default to C# 7.3. -->
+    <LangVersion>latest</LangVersion>
     <AssemblyName>Myra</AssemblyName>
     <PackageId>Myra.PlatformAgnostic</PackageId>
     <OutputPath>bin\PlatformAgnostic\$(Configuration)</OutputPath>

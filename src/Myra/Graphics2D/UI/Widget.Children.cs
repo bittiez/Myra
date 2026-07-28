@@ -50,8 +50,15 @@ namespace Myra.Graphics2D.UI
 					OnChildRemoved(w);
 				}
 			}
+			// Not handled: Replace. Children[i] = w detaches neither the old widget nor attaches
+			// the new one, so the replacement never gets a Parent. See WidgetChildrenTests.
 			else if (args.Action == NotifyCollectionChangedAction.Reset)
 			{
+				// Clear() raises Reset without OldItems and Children is already empty here, so
+				// this rebuilds to nothing and detaches nothing whenever _childrenDirty is set
+				// (no layout pass since the last mutation). The orphans keep stale
+				// Parent/Desktop until GC - harmless, since render/layout/input all walk the
+				// per-frame-refreshed copy. See WidgetChildrenTests for the exact cases.
 				foreach (Widget w in ChildrenCopy)
 				{
 					OnChildRemoved(w);
