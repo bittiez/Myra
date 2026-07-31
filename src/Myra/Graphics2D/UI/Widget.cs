@@ -762,7 +762,8 @@ namespace Myra.Graphics2D.UI
 			Enabled = true;
 			DragHandle = this;
 
-			Children.CollectionChanged += ChildrenOnCollectionChanged;
+			_children.CollectionChanged += ChildrenOnCollectionChanged;
+			_children.CollectionReset += ChildrenOnCollectionReset;
 		}
 
 		public virtual IBrush GetCurrentBackground()

@@ -1,4 +1,5 @@
 ﻿using Myra.Attributes;
+using Myra.Events;
 using Myra.Utility;
 using System;
 using System.Collections.Generic;
@@ -18,9 +19,11 @@ namespace Myra.Graphics2D.UI
 		[XmlIgnore]
 		public ILayout ChildrenLayout { get; set; }
 
+		private readonly ObservableCollectionWithReset<Widget> _children = [];
+
 		[Browsable(false)]
 		[Content]
-		protected internal ObservableCollection<Widget> Children { get; } = new ObservableCollection<Widget>();
+		protected internal ObservableCollection<Widget> Children => _children;
 
 		protected internal IEnumerable<Widget> ChildrenCopy
 		{
@@ -34,36 +37,67 @@ namespace Myra.Graphics2D.UI
 			}
 		}
 
-		private void ChildrenOnCollectionChanged(object sender, NotifyCollectionChangedEventArgs args)
+		/// <summary>Attaches and detaches children as <see cref="Children"/> changes.</summary>
+		private void ChildrenOnCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
 		{
-			if (args.Action == NotifyCollectionChangedAction.Add)
+			// Reset goes to ChildrenOnCollectionReset instead: detaching needs the removed items,
+			// which a Reset does not carry, and ChildrenCopy is no fallback - Children is already
+			// empty here, so the copy rebuilds to nothing whenever it is dirty.
+			if (e.Action == NotifyCollectionChangedAction.Reset)
+				return;
+
+			switch (e.Action)
 			{
-				foreach (Widget w in args.NewItems)
-				{
-					OnChildAdded(w);
-				}
+				case NotifyCollectionChangedAction.Add:
+					if (e.NewItems != null)
+					{
+						foreach (Widget w in e.NewItems)
+							OnChildAdded(w);
+					}
+					break;
+
+				case NotifyCollectionChangedAction.Remove:
+					if (e.OldItems != null)
+					{
+						foreach (Widget w in e.OldItems)
+							OnChildRemoved(w);
+					}
+					break;
+
+				case NotifyCollectionChangedAction.Replace:
+					// Skip widgets present on both sides. Children[i] = Children[i] still raises
+					// Replace, and a detach/reattach round trip transiently nulls Desktop - enough
+					// to close an open context menu and drop keyboard focus.
+					if (e.OldItems != null)
+					{
+						foreach (Widget w in e.OldItems)
+						{
+							if (e.NewItems == null || !e.NewItems.Contains(w))
+								OnChildRemoved(w);
+						}
+					}
+					if (e.NewItems != null)
+					{
+						foreach (Widget w in e.NewItems)
+						{
+							if (e.OldItems == null || !e.OldItems.Contains(w))
+								OnChildAdded(w);
+						}
+					}
+					break;
 			}
-			else if (args.Action == NotifyCollectionChangedAction.Remove)
-			{
-				foreach (Widget w in args.OldItems)
-				{
-					OnChildRemoved(w);
-				}
-			}
-			// Not handled: Replace. Children[i] = w detaches neither the old widget nor attaches
-			// the new one, so the replacement never gets a Parent. See WidgetChildrenTests.
-			else if (args.Action == NotifyCollectionChangedAction.Reset)
-			{
-				// Clear() raises Reset without OldItems and Children is already empty here, so
-				// this rebuilds to nothing and detaches nothing whenever _childrenDirty is set
-				// (no layout pass since the last mutation). The orphans keep stale
-				// Parent/Desktop until GC - harmless, since render/layout/input all walk the
-				// per-frame-refreshed copy. See WidgetChildrenTests for the exact cases.
-				foreach (Widget w in ChildrenCopy)
-				{
-					OnChildRemoved(w);
-				}
-			}
+
+			InvalidateChildren();
+		}
+
+		/// <summary>Detaches the children a <see cref="Children"/> clear removed.</summary>
+		private void ChildrenOnCollectionReset(object sender, CollectionResetEventArgs<Widget> e)
+		{
+			if (e.OldItems.Count == 0)
+				return;
+
+			foreach (Widget w in e.OldItems)
+				OnChildRemoved(w);
 
 			InvalidateChildren();
 		}

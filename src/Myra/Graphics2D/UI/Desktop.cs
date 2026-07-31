@@ -91,7 +91,8 @@ namespace Myra.Graphics2D.UI
 			}
 		}
 
-		public ObservableCollection<Widget> Widgets { get; } = new ObservableCollection<Widget>();
+		private readonly ObservableCollectionWithReset<Widget> _widgets = [];
+		public ObservableCollection<Widget> Widgets => _widgets;
 
 		public Func<Rectangle> BoundsFetcher = DefaultBoundsFetcher;
 
@@ -338,7 +339,8 @@ namespace Myra.Graphics2D.UI
 		public Desktop()
 		{
 			Opacity = 1.0f;
-			Widgets.CollectionChanged += WidgetsOnCollectionChanged;
+			_widgets.CollectionChanged += WidgetsOnCollectionChanged;
+			_widgets.CollectionReset += WidgetsOnCollectionReset;
 			KeyDownHandler = OnKeyDown;
 
 #if FNA
@@ -479,29 +481,84 @@ namespace Myra.Graphics2D.UI
 			Widgets.Add(Tooltip);
 		}
 
+		/// <summary>Attaches and detaches widgets as <see cref="Widgets"/> changes.</summary>
 		private void WidgetsOnCollectionChanged(object sender, NotifyCollectionChangedEventArgs args)
 		{
-			if (args.Action == NotifyCollectionChangedAction.Add)
+			switch (args.Action)
 			{
-				foreach (Widget w in args.NewItems)
+				// Reset goes to WidgetsOnCollectionReset instead: detaching needs the removed items,
+				// which a Reset does not carry, and ChildrenCopy is no fallback - Widgets is already
+				// empty here, so the copy rebuilds to nothing whenever it is dirty.
+				case NotifyCollectionChangedAction.Reset:
+					return;
+
+				case NotifyCollectionChangedAction.Add:
 				{
-					w.Desktop = this;
+					if (args.NewItems != null)
+					{
+						foreach (Widget w in args.NewItems)
+						{
+							w.Desktop = this;
+						}
+					}
+
+					break;
+				}
+				case NotifyCollectionChangedAction.Remove:
+				{
+					if (args.OldItems != null)
+					{
+						foreach (Widget w in args.OldItems)
+						{
+							w.Desktop = null;
+						}
+					}
+
+					break;
+				}
+				case NotifyCollectionChangedAction.Replace:
+				{
+					// Skip widgets present on both sides. Widgets[i] = Widgets[i] still raises
+					// Replace, and clearing then restoring Desktop is enough to close an open
+					// context menu and drop keyboard focus.
+					if (args.OldItems != null)
+					{
+						foreach (Widget w in args.OldItems)
+						{
+							if (args.NewItems == null || !args.NewItems.Contains(w))
+							{
+								w.Desktop = null;
+							}
+						}
+					}
+
+					if (args.NewItems != null)
+					{
+						foreach (Widget w in args.NewItems)
+						{
+							if (args.OldItems == null || !args.OldItems.Contains(w))
+							{
+								w.Desktop = this;
+							}
+						}
+					}
+
+					break;
 				}
 			}
-			else if (args.Action == NotifyCollectionChangedAction.Remove)
-			{
-				foreach (Widget w in args.OldItems)
-				{
-					w.Desktop = null;
-				}
-			}
-			else if (args.Action == NotifyCollectionChangedAction.Reset)
-			{
-				foreach (Widget w in ChildrenCopy)
-				{
-					w.Desktop = null;
-				}
-			}
+
+			InvalidateLayout();
+			_widgetsDirty = true;
+		}
+
+		/// <summary>Detaches the widgets a <see cref="Widgets"/> clear removed.</summary>
+		private void WidgetsOnCollectionReset(object sender, CollectionResetEventArgs<Widget> e)
+		{
+			if (e.OldItems.Count == 0)
+				return;
+
+			foreach (Widget w in e.OldItems)
+				w.Desktop = null;
 
 			InvalidateLayout();
 			_widgetsDirty = true;
@@ -543,11 +600,11 @@ namespace Myra.Graphics2D.UI
 					widget.Render(_renderContext);
 				}
 			}
-			
+
 #if DEBUG
 			RenderDebugInfo(_renderContext);
 #endif
-			
+
 			_renderContext.End();
 
 			_renderContext.DeviceScissor = oldDeviceScissor;
@@ -591,7 +648,7 @@ namespace Myra.Graphics2D.UI
             // Render run
             RenderVisual();
 		}
-		
+
 		/// <summary>
 		/// Draws debug information on the screen.
 		/// This function can be called after the normal render procedures conclude

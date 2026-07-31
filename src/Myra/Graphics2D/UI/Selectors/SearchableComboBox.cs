@@ -448,7 +448,7 @@ namespace Myra.Graphics2D.UI
 				// Popup width is pinned to the button; without this the list shrinks to the
 				// filtered rows and drags every row narrow with it.
 				HorizontalAlignment = HorizontalAlignment.Stretch,
-				MaxHeight = 300, // A default value; Can be overridden by consumers via DropdownMaximumHeight 
+				MaxHeight = 300, // A default value; Can be overridden by consumers via DropdownMaximumHeight
 			};
 
 			_listView.ScrollViewer.ShowHorizontalScrollBar = false;
@@ -781,7 +781,7 @@ namespace Myra.Graphics2D.UI
 			if (queryValid)
 			{
 				int count = 0;
-				foreach ((T item, SearchMatch match) in FilterAndOrder(query))
+				foreach ((T item, _) in FilterAndOrder(query))
 				{
 					if (MaxVisibleResults > 0 && count >= MaxVisibleResults)
 					{
@@ -789,7 +789,7 @@ namespace Myra.Graphics2D.UI
 					}
 
 					_visibleItems.Add(item);
-					_listView.Widgets.Add(CreateItemWidget(item, match));
+					_listView.Widgets.Add(CreateItemWidget(item));
 					count++;
 				}
 			}
@@ -875,27 +875,26 @@ namespace Myra.Graphics2D.UI
 		}
 
 		/// <summary>
-		/// Builds the row widget for one matched item. The base implementation is a label carrying
+		/// Builds the row widget for one item. The base implementation is a label carrying
 		/// <see cref="TextSelector"/>'s text and, if any, <see cref="TooltipSelector"/>'s tooltip;
-		/// override to render richer rows, e.g. highlighting <see cref="SearchMatch.Spans"/>.
+		/// override to render richer rows.
+		/// <para>
+		/// The item's <see cref="SearchMatch"/> is deliberately not passed: this also builds the
+		/// off-query rows <see cref="MeasureFullContentWidth"/> measures, which have no match. An
+		/// override that needs match spans has to capture them from
+		/// <see cref="FilterAndOrder"/> itself.
+		/// </para>
 		/// </summary>
 		/// <param name="item">The item to build a row for.</param>
-		/// <param name="match">That item's match, whose spans say which parts of the text matched.</param>
 		/// <returns>The row widget. The list wraps it in its own clickable row.</returns>
-		protected virtual Widget CreateItemWidget(T item, SearchMatch match)
+		protected virtual Widget CreateItemWidget(T item)
 		{
-			var label = new Label
-			{
-				Text = TextSelector(item) ?? string.Empty
-			};
-
 			string? tooltip = TooltipSelector?.Invoke(item);
-			if (!string.IsNullOrEmpty(tooltip))
+			return new Label
 			{
-				label.Tooltip = tooltip;
-			}
-
-			return label;
+				Text = TextSelector(item) ?? string.Empty,
+				Tooltip = tooltip,
+			};
 		}
 
 		/// <summary>
@@ -997,7 +996,7 @@ namespace Myra.Graphics2D.UI
 			_listView.Widgets.Clear();
 			foreach (T item in _items)
 			{
-				_listView.Widgets.Add(CreateItemWidget(item, SearchMatch.Exact(1d)));
+				_listView.Widgets.Add(CreateItemWidget(item));
 			}
 
 			Point measured = _popup.Measure(new Point(10000, 10000));
