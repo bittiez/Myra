@@ -127,6 +127,14 @@ namespace Myra.Graphics2D.UI.Properties
 				VerticalAlignment = VerticalAlignment.Stretch;
 			}
 
+			/// <summary>
+			/// Builds the group's expand/collapse toggle. Content comes from <paramref name="markFactory"/>
+			/// when supplied - with the button's own chrome stripped, since then the supplied widget is
+			/// meant to be the whole control - or from <see cref="TreeStyle.MarkStyle"/> otherwise.
+			/// </summary>
+			/// <param name="parent">The grid the group belongs to, for its style and mark factory.</param>
+			/// <param name="markFactory">Builds the mark's content given whether it's pressed, or null.</param>
+			/// <returns>The unwired toggle button.</returns>
 			private static ToggleButton CreateMarkButton(PropertyGrid parent, Func<bool, Widget> markFactory)
 			{
 				Widget markContent;
@@ -169,6 +177,15 @@ namespace Myra.Graphics2D.UI.Properties
 				return mark;
 			}
 
+			/// <summary>
+			/// Hooks the mark's press to show/hide the nested grid and track the category's expanded
+			/// state, and sets its initial pressed state - expanded unless <paramref name="parentProperty"/>
+			/// carries <see cref="DesignerFoldedAttribute"/>.
+			/// </summary>
+			/// <param name="parent">The grid the group belongs to, whose expanded-categories set is updated.</param>
+			/// <param name="category">The category key tracked in <c>parent._expandedCategories</c>.</param>
+			/// <param name="parentProperty">The record the group stands for, or null at the root category.</param>
+			/// <param name="markFactory">Rebuilds the mark's content on every press, when supplied.</param>
 			private void WireMarkExpansion(PropertyGrid parent, string category, Record parentProperty, Func<bool, Widget> markFactory)
 			{
 				_mark.PressedChanged += (sender, args) =>
@@ -202,6 +219,12 @@ namespace Myra.Graphics2D.UI.Properties
 				}
 			}
 
+			/// <summary>
+			/// Lays out the group's title next to its reset button, when there is one. Returns the
+			/// label alone otherwise, so a group without a reset button doesn't carry an empty panel.
+			/// </summary>
+			/// <param name="label">The group's title label.</param>
+			/// <returns>The widget to place in the header row.</returns>
 			private Widget CreateHeaderRow(Label label)
 			{
 				if (_reset == null)
@@ -1745,9 +1768,16 @@ namespace Myra.Graphics2D.UI.Properties
 			}
 		}
 
+		/// <summary>
+		/// Re-evaluates one tracked row against its default and updates its reset button's enabled
+		/// state and its name's colour to match.
+		/// </summary>
+		/// <param name="indicator">The row's tracked affordances.</param>
 		private void RefreshModifiedIndicator(ModifiedIndicator indicator)
 		{
-			var defaultValue = DefaultValueProvider(this, indicator.Record);
+			// DefaultValueProvider is a public mutable field - it can be cleared after the indicator
+			// was tracked, and the next edit would otherwise reach this call with it gone.
+			var defaultValue = DefaultValueProvider?.Invoke(this, indicator.Record);
 			var modified = defaultValue != null && IsModified(indicator.Record, defaultValue);
 
 			if (ResetOnlyWhenModified && indicator.ResetWidget != null)

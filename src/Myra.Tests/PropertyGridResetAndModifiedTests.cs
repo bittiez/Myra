@@ -170,6 +170,31 @@ namespace Myra.Tests
 			Assert.AreEqual("Value", changedName);
 		}
 
+		/// <summary>
+		/// Regression: DefaultValueProvider is a public mutable field, and RefreshModifiedIndicator
+		/// used to call it unguarded. Clearing it after the grid tracked an indicator - then triggering
+		/// any change that calls FireChanged - reached that call with the provider gone and threw.
+		/// The still-wired reset button (built while the provider was set) is a real, public way to
+		/// reach FireChanged without reflecting into a private method.
+		/// </summary>
+		[Test]
+		public void ClearingDefaultValueProviderAfterTrackingDoesNotThrowOnTheNextChange()
+		{
+			var model = new LeafModel { Value = 9f };
+			var grid = new PropertyGrid
+			{
+				DefaultValueProvider = (g, r) => r.Name == "Value" ? (object)5f : null,
+				ResetOnlyWhenModified = true,
+				Object = model
+			};
+
+			var resetButton = (Button)FindResetButton(grid);
+			grid.DefaultValueProvider = null;
+
+			Assert.DoesNotThrow(resetButton.DoClick);
+			Assert.AreEqual(5f, model.Value);
+		}
+
 		[Test]
 		public void LocalizerTranslatesALocalizedDisplayName()
 		{
