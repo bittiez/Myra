@@ -4,8 +4,9 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Xml.Serialization;
-using Myra.MML;
 using Myra.Attributes;
+using Myra.Events;
+using Myra.MML;
 
 
 #if MONOGAME || FNA
@@ -510,9 +511,9 @@ namespace Myra.Graphics2D.UI
 			UpdateHoverPosition(Desktop.MousePosition);
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			if (Desktop == null)
 			{

@@ -42,6 +42,9 @@ namespace Myra.Graphics2D.UI.Properties
 			private readonly ToggleButton _mark;
 			private readonly PropertyGrid _propertyGrid;
 
+			/// <summary>Group-level reset button, when the grid supplies defaults. May be null.</summary>
+			private readonly Widget _reset;
+
 			public ToggleButton Mark
 			{
 				get { return _mark; }
@@ -56,7 +59,11 @@ namespace Myra.Graphics2D.UI.Properties
 			{
 				get
 				{
-					var headerBounds = new Rectangle(0, 0, ActualBounds.Width, _layout.GetRowHeight(0));
+					// Anchored to ActualBounds rather than to the origin: margin, border and padding
+					// all shift the content down and right, and the header highlight and its
+					// hit test have to shift with it.
+					var actualBounds = ActualBounds;
+					var headerBounds = new Rectangle(actualBounds.X, actualBounds.Y, actualBounds.Width, _layout.GetRowHeight(0));
 
 					return headerBounds;
 				}
@@ -94,24 +101,83 @@ namespace Myra.Graphics2D.UI.Properties
 				Grid.SetRow(_propertyGrid, 1);
 
 				// Mark
-				var markImage = new Image();
-				var imageStyle = parent.PropertyGridStyle.MarkStyle.ImageStyle;
-				if (imageStyle != null)
+				var markFactory = parent.MarkContentFactory;
+
+				_mark = CreateMarkButton(parent, markFactory);
+				Children.Add(_mark);
+
+				WireMarkExpansion(parent, category, parentProperty, markFactory);
+
+				var label = new Label(null)
 				{
-					markImage.ApplyPressableImageStyle(imageStyle);
+					Text = header,
+				};
+				label.ApplyLabelStyle(parent.PropertyGridStyle.LabelStyle);
+
+				// Resets the group as a whole, which replaces every record below it.
+				_reset = parent.CreateResetWidget(parentProperty, parentProperty != null && parentProperty.HasSetter);
+
+				// Tracked against the parent, which owns the record this group stands for - a group
+				// header's reset button goes stale exactly as a row's does.
+				parent.TrackModifiedIndicator(parentProperty, _reset, label);
+
+				Children.Add(CreateHeaderRow(label));
+
+				HorizontalAlignment = HorizontalAlignment.Stretch;
+				VerticalAlignment = VerticalAlignment.Stretch;
+			}
+
+			private static ToggleButton CreateMarkButton(PropertyGrid parent, Func<bool, Widget> markFactory)
+			{
+				Widget markContent;
+
+				if (markFactory != null)
+				{
+					markContent = markFactory(false);
+				}
+				else
+				{
+					var markImage = new Image();
+					var imageStyle = parent.PropertyGridStyle.MarkStyle.ImageStyle;
+					if (imageStyle != null)
+					{
+						markImage.ApplyPressableImageStyle(imageStyle);
+					}
+
+					markContent = markImage;
 				}
 
-				_mark = new ToggleButton(null)
+				var mark = new ToggleButton(null)
 				{
 					HorizontalAlignment = HorizontalAlignment.Left,
 					VerticalAlignment = VerticalAlignment.Center,
-					Content = markImage
+					Content = markContent
 				};
 
-				Children.Add(_mark);
+				if (markFactory != null)
+				{
+					// A supplied mark is the whole control; the toggle button's own frame would
+					// otherwise show through around it, and does so differently per state.
+					mark.Background = null;
+					mark.OverBackground = null;
+					mark.PressedBackground = null;
+					mark.Border = null;
+					mark.BorderThickness = new Thickness(0);
+					mark.Padding = new Thickness(0);
+				}
 
+				return mark;
+			}
+
+			private void WireMarkExpansion(PropertyGrid parent, string category, Record parentProperty, Func<bool, Widget> markFactory)
+			{
 				_mark.PressedChanged += (sender, args) =>
 				{
+					if (markFactory != null)
+					{
+						_mark.Content = markFactory(_mark.IsPressed);
+					}
+
 					if (_mark.IsPressed)
 					{
 						Children.Add(_propertyGrid);
@@ -134,26 +200,74 @@ namespace Myra.Graphics2D.UI.Properties
 				{
 					_mark.IsPressed = true;
 				}
+			}
 
-				var label = new Label(null)
+			private Widget CreateHeaderRow(Label label)
+			{
+				if (_reset == null)
 				{
-					Text = header,
+					Grid.SetColumn(label, 1);
+					return label;
+				}
+
+				var headerPanel = new HorizontalStackPanel
+				{
+					Spacing = 4,
+					VerticalAlignment = VerticalAlignment.Center
 				};
-				Grid.SetColumn(label, 1);
-				label.ApplyLabelStyle(parent.PropertyGridStyle.LabelStyle);
 
-				Children.Add(label);
+				StackPanel.SetProportionType(label, ProportionType.Fill);
+				label.VerticalAlignment = VerticalAlignment.Center;
 
-				HorizontalAlignment = HorizontalAlignment.Stretch;
-				VerticalAlignment = VerticalAlignment.Stretch;
+				headerPanel.Widgets.Add(label);
+				headerPanel.Widgets.Add(_reset);
+
+				Grid.SetColumn(headerPanel, 1);
+
+				return headerPanel;
+			}
+
+			public override void OnTouchDown(TouchEventArgs args)
+			{
+				base.OnTouchDown(args);
+
+				if (_propertyGrid.ToggleGroupsOnSingleClick)
+				{
+					ToggleFromHeader();
+				}
 			}
 
 			public override void OnTouchDoubleClick()
 			{
 				base.OnTouchDoubleClick();
 
-				var mousePosition = ToLocal(Desktop.MousePosition);
-				if (!HeaderBounds.Contains(mousePosition) || _mark.Bounds.Contains(mousePosition))
+				// In single-click mode the press has already toggled it; doing it again here would
+				// undo that on every double click.
+				if (!_propertyGrid.ToggleGroupsOnSingleClick)
+				{
+					ToggleFromHeader();
+				}
+			}
+
+			/// <summary>
+			/// Expands or collapses the group when the pointer is over the header, but not over one
+			/// of the controls in it - those carry their own actions.
+			/// </summary>
+			private void ToggleFromHeader()
+			{
+				var mousePosition = Desktop.MousePosition;
+
+				if (!HeaderBounds.Contains(ToLocal(mousePosition)))
+				{
+					return;
+				}
+
+				if (_mark.ContainsGlobalPoint(mousePosition))
+				{
+					return;
+				}
+
+				if (_reset != null && _reset.ContainsGlobalPoint(mousePosition))
 				{
 					return;
 				}
@@ -175,6 +289,22 @@ namespace Myra.Graphics2D.UI.Properties
 				base.InternalRender(context);
 			}
 		}
+
+		/// <summary>
+		/// One row's "has this been touched yet" affordances, kept so they can be re-evaluated when a
+		/// value changes. The state is a comparison against a default, which every edit can flip -
+		/// deciding it once while building the row leaves the reset button dead for the rest of the
+		/// grid's life.
+		/// </summary>
+		private sealed class ModifiedIndicator
+		{
+			public Record Record;
+			public Widget ResetWidget;
+			public Label NameLabel;
+			public Color? UnmodifiedNameColor;
+		}
+
+		private readonly List<ModifiedIndicator> _modifiedIndicators = new List<ModifiedIndicator>();
 
 		private readonly GridLayout _layout = new GridLayout();
 		private readonly PropertyGrid _parentGrid;
@@ -341,6 +471,141 @@ namespace Myra.Graphics2D.UI.Properties
 		[XmlIgnore]
 		public Func<Record, object, Widget> CustomWidgetProvider;
 
+		/// <summary>
+		/// Supplies the default value of a record. When it returns a non-null value for a settable
+		/// record, a reset button is placed beside that record's editor; return null to leave a
+		/// record without one. The grid is passed so the provider can locate the record via
+		/// <see cref="ParentRecords"/>, which a nested object alone does not identify.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public Func<PropertyGrid, Record, object> DefaultValueProvider;
+
+		/// <summary>
+		/// The records leading from the root grid down to this one, outermost first. Empty on the
+		/// root grid.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public IReadOnlyList<Record> ParentRecords
+		{
+			get
+			{
+				var path = new List<Record>();
+
+				for (var grid = this; grid._parentProperty != null; grid = grid._parentGrid)
+				{
+					path.Insert(0, grid._parentProperty);
+
+					if (grid._parentGrid == null)
+					{
+						break;
+					}
+				}
+
+				return path;
+			}
+		}
+
+		/// <summary>
+		/// Builds the per-record reset button, given the record and the action that performs the
+		/// reset. Lets a caller supply a button in its own skin, or one whose glyph comes from a
+		/// font the default style does not use. Falls back to a text button when null.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public Func<Record, Action, Widget> ResetButtonFactory;
+
+		/// <summary>Label of the fallback text reset button, used when there is no factory.</summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public string ResetButtonText = "R";
+
+		/// <summary>Tooltip of the fallback reset button. Null or empty leaves it without one.</summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public string ResetButtonTooltip;
+
+		/// <summary>
+		/// Builds the content of a group's expand/collapse mark, given whether the group is
+		/// currently expanded. When set, the mark's own button chrome is dropped so the supplied
+		/// widget is the whole control. Falls back to <see cref="TreeStyle.MarkStyle"/> when null.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public Func<bool, Widget> MarkContentFactory;
+
+		/// <summary>
+		/// Translates the strings shown for a record, given the lookup key and the fallback text
+		/// carried by a <see cref="LocalizedDisplayNameAttribute"/> or
+		/// <see cref="LocalizedDescriptionAttribute"/>.
+		/// <para>
+		/// Supplied per grid rather than held globally, so an application pays for translation only
+		/// on the screens that ask for it. Left null, every localized attribute shows its fallback,
+		/// which is why the fallback and not the key is what those attributes report as their
+		/// framework value.
+		/// </para>
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public Func<string, string, string> Localizer;
+
+		/// <summary>
+		/// When true, a record's reset button is enabled only while that record differs from the
+		/// default <see cref="DefaultValueProvider"/> reports for it. The button stays in place
+		/// either way, so the row does not change width as values are edited.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public bool ResetOnlyWhenModified;
+
+		/// <summary>
+		/// Colour for the name of a record that differs from its default. Null leaves every name in
+		/// the style's own colour.
+		/// <para>
+		/// Needs <see cref="DefaultValueProvider"/>: without one there is nothing to compare against
+		/// and nothing is highlighted.
+		/// </para>
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public Color? ModifiedNameColor;
+
+		/// <summary>
+		/// When true, the editors this grid builds take the mouse wheel only while focused. Hovering
+		/// a numeric editor and scrolling the panel otherwise edits it, which is easy to do by
+		/// accident and hard to notice.
+		/// </summary>
+		[Browsable(false)]
+		[XmlIgnore]
+		public bool MouseWheelRequiresFocusOnEditors;
+
+		/// <summary>Vertical gap between rows.</summary>
+		public int RowSpacing
+		{
+			get { return _layout.RowSpacing; }
+			set { _layout.RowSpacing = value; }
+		}
+
+		/// <summary>Horizontal gap between the name and editor columns.</summary>
+		public int ColumnSpacing
+		{
+			get { return _layout.ColumnSpacing; }
+			set { _layout.ColumnSpacing = value; }
+		}
+
+		/// <summary>Extra vertical margin above and below each nested group.</summary>
+		public int GroupSpacing { get; set; }
+
+		/// <summary>Whether a horizontal separator is drawn before each nested group.</summary>
+		public bool GroupSeparators { get; set; }
+
+		/// <summary>
+		/// Whether clicking a group header expands or collapses it. Off by default, which leaves
+		/// the header needing a double click.
+		/// </summary>
+		public bool ToggleGroupsOnSingleClick { get; set; }
+
 		public event EventHandler<GenericEventArgs<string>> PropertyChanged;
 		public event EventHandler ObjectChanged;
 
@@ -370,6 +635,24 @@ namespace Myra.Graphics2D.UI.Properties
 			this.CustomWidgetProvider = parentGrid?.CustomWidgetProvider;
 			this.CustomSetter = parentGrid?.CustomSetter;
 			this.CustomValuesProvider = parentGrid?.CustomValuesProvider;
+
+			if (parentGrid != null)
+			{
+				DefaultValueProvider = parentGrid.DefaultValueProvider;
+				ResetButtonFactory = parentGrid.ResetButtonFactory;
+				ResetButtonText = parentGrid.ResetButtonText;
+				ResetButtonTooltip = parentGrid.ResetButtonTooltip;
+				MarkContentFactory = parentGrid.MarkContentFactory;
+				Localizer = parentGrid.Localizer;
+				ResetOnlyWhenModified = parentGrid.ResetOnlyWhenModified;
+				ModifiedNameColor = parentGrid.ModifiedNameColor;
+				MouseWheelRequiresFocusOnEditors = parentGrid.MouseWheelRequiresFocusOnEditors;
+				GroupSpacing = parentGrid.GroupSpacing;
+				GroupSeparators = parentGrid.GroupSeparators;
+				ToggleGroupsOnSingleClick = parentGrid.ToggleGroupsOnSingleClick;
+				RowSpacing = parentGrid.RowSpacing;
+				ColumnSpacing = parentGrid.ColumnSpacing;
+			}
 		}
 
 		public PropertyGrid(TreeStyle style, string category) : this(style, category, null)
@@ -386,6 +669,13 @@ namespace Myra.Graphics2D.UI.Properties
 
 		private void FireChanged(string name)
 		{
+			// Up the chain as well as here: a nested struct is edited through its own grid but the
+			// value the parent holds changes with it, so both their rows can flip.
+			for (var grid = this; grid != null; grid = grid._parentGrid)
+			{
+				grid.RefreshModifiedIndicators();
+			}
+
 			var ev = PropertyChanged;
 
 			var p = _parentGrid;
@@ -1256,13 +1546,7 @@ namespace Myra.Graphics2D.UI.Properties
 
 				if (valueWidget != null)
 				{
-					var name = record.Name;
-					var dn = record.FindAttribute<DisplayNameAttribute>();
-
-					if (dn != null)
-					{
-						name = dn.DisplayName;
-					}
+					var name = DisplayNameOf(record);
 
 					if (!PassesFilter(name))
 					{
@@ -1275,17 +1559,35 @@ namespace Myra.Graphics2D.UI.Properties
 						VerticalAlignment = VerticalAlignment.Center,
 					};
 
+					if (MouseWheelRequiresFocusOnEditors)
+					{
+						RequireFocusForMouseWheel(valueWidget);
+					}
+
+					var description = DescriptionOf(record);
+					if (!string.IsNullOrEmpty(description))
+					{
+						nameLabel.Tooltip = description;
+						valueWidget.Tooltip = description;
+					}
+
 					Grid.SetColumn(nameLabel, 0);
 					Grid.SetRow(nameLabel, oldY);
 
 					Children.Add(nameLabel);
 
-					Grid.SetColumn(valueWidget, 1);
-					Grid.SetRow(valueWidget, oldY);
-					valueWidget.HorizontalAlignment = HorizontalAlignment.Stretch;
-					valueWidget.VerticalAlignment = VerticalAlignment.Top;
+					var rowWidget = WrapWithResetButton(record, valueWidget, hasSetter, out var resetWidget);
 
-					Children.Add(valueWidget);
+					// Both affordances follow the value from here on, rather than being frozen as the
+					// row was built.
+					TrackModifiedIndicator(record, resetWidget, nameLabel);
+
+					Grid.SetColumn(rowWidget, 1);
+					Grid.SetRow(rowWidget, oldY);
+					rowWidget.HorizontalAlignment = HorizontalAlignment.Stretch;
+					rowWidget.VerticalAlignment = VerticalAlignment.Top;
+
+					Children.Add(rowWidget);
 
 					rowProportion = new Proportion(ProportionType.Auto);
 					_layout.RowsProportions.Add(rowProportion);
@@ -1297,9 +1599,34 @@ namespace Myra.Graphics2D.UI.Properties
 					// Subgrid
 					if (value != null)
 					{
-						if (PassesFilter(record.Name))
+						// A group is titled the same way a row is. Reading record.Name here instead
+						// would leave a nested object as the one thing in the grid that ignores its
+						// own display metadata.
+						var groupName = DisplayNameOf(record);
+
+						if (PassesFilter(groupName))
 						{
-							var subGrid = new SubGrid(this, value, record.Name, DefaultCategoryName, string.Empty, record);
+							if (GroupSeparators && y > 0)
+							{
+								var separator = new HorizontalSeparator();
+								Grid.SetColumnSpan(separator, 2);
+								Grid.SetRow(separator, y);
+
+								Children.Add(separator);
+
+								_layout.RowsProportions.Add(new Proportion(ProportionType.Auto));
+								++y;
+							}
+
+							var subGrid = new SubGrid(this, value, groupName, DefaultCategoryName, string.Empty, record);
+							subGrid.Margin = new Thickness(0, GroupSpacing, 0, GroupSpacing);
+
+							var groupDescription = DescriptionOf(record);
+							if (!string.IsNullOrEmpty(groupDescription))
+							{
+								subGrid.Tooltip = groupDescription;
+							}
+
 							Grid.SetColumnSpan(subGrid, 2);
 							Grid.SetRow(subGrid, y);
 
@@ -1316,6 +1643,210 @@ namespace Myra.Graphics2D.UI.Properties
 			}
 		}
 
+		/// <summary>
+		/// Builds the button that restores <paramref name="record"/> to the default supplied by
+		/// <see cref="DefaultValueProvider"/>, or null when there is no default to restore to.
+		/// <para>
+		/// Recursive by construction: a record holding a nested object is reset as a whole, which
+		/// replaces everything below it.
+		/// </para>
+		/// </summary>
+		private Widget CreateResetWidget(Record record, bool hasSetter)
+		{
+			if (record == null || DefaultValueProvider == null || !hasSetter)
+			{
+				return null;
+			}
+
+			var defaultValue = DefaultValueProvider(this, record);
+			if (defaultValue == null)
+			{
+				return null;
+			}
+
+			Action reset = () =>
+			{
+				SetValue(record, _object, defaultValue);
+				PropagateValueTypeChange();
+				FireChanged(record.Name);
+
+				// The editor widgets read their value once, at build time.
+				Rebuild();
+			};
+
+			Widget resetWidget;
+
+			if (ResetButtonFactory != null)
+			{
+				resetWidget = ResetButtonFactory(record, reset);
+			}
+			else
+			{
+				var button = Button.CreateTextButton(ResetButtonText);
+				button.VerticalAlignment = VerticalAlignment.Center;
+
+				if (!string.IsNullOrEmpty(ResetButtonTooltip))
+				{
+					button.Tooltip = ResetButtonTooltip;
+				}
+
+				button.Click += (sender, args) => reset();
+
+				resetWidget = button;
+			}
+
+			return resetWidget;
+		}
+
+		/// <summary>
+		/// Records a row's reset button and name label so their appearance can follow the value.
+		/// Ignored when the grid has nothing to compare against, or has been asked for neither
+		/// affordance.
+		/// </summary>
+		/// <param name="record">The record the row shows.</param>
+		/// <param name="resetWidget">The row's reset button, or null.</param>
+		/// <param name="nameLabel">The row's name label, or null.</param>
+		private void TrackModifiedIndicator(Record record, Widget resetWidget, Label nameLabel)
+		{
+			if (record == null || DefaultValueProvider == null)
+			{
+				return;
+			}
+
+			if (!ResetOnlyWhenModified && ModifiedNameColor == null)
+			{
+				return;
+			}
+
+			_modifiedIndicators.Add(new ModifiedIndicator
+			{
+				Record = record,
+				ResetWidget = resetWidget,
+				NameLabel = nameLabel,
+
+				// Captured rather than assumed: the label's colour comes from the style, and putting
+				// a hard-coded one back would repaint every unmodified row the moment one was edited.
+				UnmodifiedNameColor = nameLabel?.TextColor
+			});
+
+			RefreshModifiedIndicator(_modifiedIndicators[_modifiedIndicators.Count - 1]);
+		}
+
+		/// <summary>
+		/// Re-reads every tracked row and updates its reset button and name colour. Called on each
+		/// change rather than rebuilding the grid: a rebuild would replace the editor being typed
+		/// into and take the caret with it.
+		/// </summary>
+		private void RefreshModifiedIndicators()
+		{
+			for (var i = 0; i < _modifiedIndicators.Count; ++i)
+			{
+				RefreshModifiedIndicator(_modifiedIndicators[i]);
+			}
+		}
+
+		private void RefreshModifiedIndicator(ModifiedIndicator indicator)
+		{
+			var defaultValue = DefaultValueProvider(this, indicator.Record);
+			var modified = defaultValue != null && IsModified(indicator.Record, defaultValue);
+
+			if (ResetOnlyWhenModified && indicator.ResetWidget != null)
+			{
+				indicator.ResetWidget.Enabled = modified;
+			}
+
+			if (ModifiedNameColor != null && indicator.NameLabel != null)
+			{
+				indicator.NameLabel.TextColor = modified ? ModifiedNameColor.Value : indicator.UnmodifiedNameColor ?? indicator.NameLabel.TextColor;
+			}
+		}
+
+		/// <summary>
+		/// Makes an editor take the mouse wheel only while focused, itself and everything inside it -
+		/// a composite editor puts the wheel handling on an inner widget.
+		/// </summary>
+		/// <param name="widget">The editor.</param>
+		private static void RequireFocusForMouseWheel(Widget widget)
+		{
+			if (widget == null)
+			{
+				return;
+			}
+
+			widget.MouseWheelRequiresFocus = true;
+
+			foreach (var child in widget.ChildrenCopy)
+			{
+				RequireFocusForMouseWheel(child);
+			}
+		}
+
+		/// <summary>
+		/// Whether a record currently differs from the default supplied for it.
+		/// </summary>
+		/// <param name="record">The record to test.</param>
+		/// <param name="defaultValue">Its default, as already resolved by the caller.</param>
+		/// <returns>Whether the two differ.</returns>
+		private bool IsModified(Record record, object defaultValue)
+		{
+			var value = record.GetValue(_object);
+
+			// Value types and strings compare by content. A nested object reaches here through its
+			// group header, and a reference type has no content comparison to make - so a group
+			// standing for one always reads as modified. Better that way round than a reset button
+			// that refuses to undo something.
+			return !Equals(value, defaultValue);
+		}
+
+		/// <summary>
+		/// Pairs an editor with its reset button, when there is one. Returns the editor untouched
+		/// otherwise.
+		/// </summary>
+		private Widget WrapWithResetButton(Record record, Widget valueWidget, bool hasSetter, out Widget resetWidget)
+		{
+			resetWidget = CreateResetWidget(record, hasSetter);
+
+			if (resetWidget == null)
+			{
+				return valueWidget;
+			}
+
+			var panel = new HorizontalStackPanel
+			{
+				Spacing = 4,
+				HorizontalAlignment = HorizontalAlignment.Stretch
+			};
+
+			// The editor keeps the stretch it would have had as the row's only widget, so pairing it
+			// with a button doesn't shrink it back to its natural width and leave a gap.
+			valueWidget.HorizontalAlignment = HorizontalAlignment.Stretch;
+			valueWidget.VerticalAlignment = VerticalAlignment.Center;
+
+			StackPanel.SetProportionType(valueWidget, ProportionType.Fill);
+			panel.Widgets.Add(valueWidget);
+			panel.Widgets.Add(resetWidget);
+
+			return panel;
+		}
+
+		/// <summary>
+		/// Writes this grid's object back up the chain of parent grids. Needed after any edit when
+		/// the object is a boxed nested struct, since each level holds its own copy.
+		/// </summary>
+		private void PropagateValueTypeChange()
+		{
+			var grid = this;
+			var parent = grid._parentGrid;
+
+			while (parent != null && grid._parentProperty != null && grid._parentProperty.Type.IsValueType)
+			{
+				grid._parentProperty.SetValue(parent._object, grid._object);
+
+				grid = parent;
+				parent = grid._parentGrid;
+			}
+		}
+
 		public bool PassesFilter(string name)
 		{
 			if (string.IsNullOrEmpty(Filter) || string.IsNullOrEmpty(name))
@@ -1326,12 +1857,71 @@ namespace Myra.Graphics2D.UI.Properties
 			return name.ToLower().Contains(_filter.ToLower());
 		}
 
+		/// <summary>
+		/// The text to title a record with: its localized display name, its plain one, or failing
+		/// both the member's own name.
+		/// </summary>
+		/// <param name="record">The record being shown.</param>
+		/// <returns>The text.</returns>
+		private string DisplayNameOf(Record record)
+		{
+			var localized = record.FindAttribute<LocalizedDisplayNameAttribute>();
+
+			if (localized != null)
+			{
+				return Localize(localized.Key, localized.DisplayName);
+			}
+
+			var displayName = record.FindAttribute<DisplayNameAttribute>();
+
+			return displayName != null ? displayName.DisplayName : record.Name;
+		}
+
+		/// <summary>
+		/// The tooltip text for a record, or null where it carries none.
+		/// </summary>
+		/// <param name="record">The record being shown.</param>
+		/// <returns>The text, or null.</returns>
+		private string DescriptionOf(Record record)
+		{
+			var localized = record.FindAttribute<LocalizedDescriptionAttribute>();
+
+			if (localized != null)
+			{
+				return Localize(localized.Key, localized.Description);
+			}
+
+			var description = record.FindAttribute<DescriptionAttribute>();
+
+			return description != null ? description.Description : null;
+		}
+
+		/// <summary>
+		/// Runs a key and its fallback through <see cref="Localizer"/>. Without one, or where the
+		/// localizer has nothing for the key, the fallback stands.
+		/// </summary>
+		/// <param name="key">The lookup key.</param>
+		/// <param name="fallback">Text to use when the key does not resolve.</param>
+		/// <returns>The text to show.</returns>
+		private string Localize(string key, string fallback)
+		{
+			if (Localizer == null)
+			{
+				return fallback;
+			}
+
+			var localized = Localizer(key, fallback);
+
+			return string.IsNullOrEmpty(localized) ? fallback : localized;
+		}
+
 		public void Rebuild()
 		{
 			_layout.RowsProportions.Clear();
 			Children.Clear();
 			_records.Clear();
 			_expandedCategories.Clear();
+			_modifiedIndicators.Clear();
 
 			if (_object == null)
 			{

@@ -5,6 +5,14 @@ using System.Xml.Serialization;
 using System;
 using Myra.Events;
 
+#if MONOGAME || FNA
+using Microsoft.Xna.Framework;
+#elif STRIDE
+using Stride.Core.Mathematics;
+#else
+using System.Drawing;
+#endif
+
 namespace Myra.Graphics2D.UI
 {
 	public abstract class ButtonBase2 : ContentControl
@@ -48,7 +56,7 @@ namespace Myra.Graphics2D.UI
 
 		public void DoClick()
 		{
-			OnTouchDown();
+			OnTouchDown(new TouchEventArgs(Point.Zero, TouchButton.Left));
 			OnTouchUp();
 		}
 
@@ -100,9 +108,9 @@ namespace Myra.Graphics2D.UI
 			}
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			if (!Enabled)
 			{

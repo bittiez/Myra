@@ -43,6 +43,9 @@ namespace Myra.Graphics2D.UI
 		public Point PreviousMousePosition { get; private set; }
 		public Point? PreviousTouchPosition { get; private set; }
 
+		/// <summary>The button that produced the current <see cref="TouchPosition"/>, or the last one that did.</summary>
+		public TouchButton TouchButton { get; private set; }
+
 		public Point MousePosition
 		{
 			get => _mousePosition;
@@ -126,7 +129,7 @@ namespace Myra.Graphics2D.UI
 		public event EventHandler MouseMoved;
 
 		public event EventHandler TouchMoved;
-		public event EventHandler TouchDown;
+		public event EventHandler<TouchEventArgs> TouchDown;
 		public event EventHandler TouchUp;
 		public event EventHandler TouchDoubleClick;
 
@@ -171,12 +174,26 @@ namespace Myra.Graphics2D.UI
 
             // Touch Position
             Point? touchPosition = null;
-			if (mouseInfo.IsLeftButtonDown || mouseInfo.IsRightButtonDown || mouseInfo.IsMiddleButtonDown)
+			var touchButton = TouchButton.None;
+			if (mouseInfo.IsLeftButtonDown)
 			{
-				// Touch by mouse
 				touchPosition = MousePosition;
+				touchButton = TouchButton.Left;
+			}
+			else if (mouseInfo.IsRightButtonDown)
+			{
+				touchPosition = MousePosition;
+				touchButton = TouchButton.Right;
+			}
+			else if (mouseInfo.IsMiddleButtonDown)
+			{
+				touchPosition = MousePosition;
+				touchButton = TouchButton.Middle;
 			}
 
+			// Set before TouchPosition: the setter queues TouchDown, which is read back once the
+			// queue drains, so the button must already be in place by then.
+			TouchButton = touchButton;
 			TouchPosition = touchPosition;
 
 #if STRIDE
@@ -224,6 +241,7 @@ namespace Myra.Graphics2D.UI
                     pos = Vector2.Transform(new Vector2(pos.X, pos.Y), inv);
                 }
 
+                TouchButton = TouchButton.Left;
                 TouchPosition = new Point((int)pos.X, (int)pos.Y);
 			}
 			else
@@ -335,7 +353,7 @@ namespace Myra.Graphics2D.UI
 					break;
 				case InputEventType.TouchDown:
 					InputOnTouchDown();
-					TouchDown.Invoke(this);
+					TouchDown?.Invoke(this, new TouchEventArgs(TouchPosition ?? Point.Zero, TouchButton));
 					break;
 				case InputEventType.TouchUp:
 					TouchUp.Invoke(this);

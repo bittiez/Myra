@@ -735,6 +735,78 @@ namespace Myra.Tests
 			Assert.IsFalse(sourceStrategy.UseRegex);
 		}
 
+		/// <summary>
+		/// The closed box is a single ToggleButton child holding a Label - there is nothing else of
+		/// that type on an unopened combo box, so the first match is unambiguous.
+		/// </summary>
+		private static Label ClosedBoxLabel(SearchableComboBox<string> combo)
+		{
+			var button = combo.GetChildren(recursive: true).OfType<ToggleButton>().First();
+			return (Label)button.Content;
+		}
+
+		[Test]
+		public void PlaceholderTextShowsOnTheClosedBoxWhileNothingIsSelected()
+		{
+			var combo = new SearchableComboBox<string>
+			{
+				PlaceholderText = "Pick one"
+			};
+			combo.Items.Add("alpha");
+
+			var label = ClosedBoxLabel(combo);
+			Assert.AreEqual("Pick one", label.Text);
+			Assert.Less(label.Opacity, 1f, "placeholder should be dimmed relative to a real value");
+		}
+
+		[Test]
+		public void SelectingAnItemReplacesThePlaceholderAtFullOpacity()
+		{
+			var combo = CreateOpenedComboBox("alpha", "beta");
+			combo.PlaceholderText = "Pick one";
+
+			combo.SelectedIndex = 0;
+
+			var label = ClosedBoxLabel(combo);
+			Assert.AreEqual("alpha", label.Text);
+			Assert.AreEqual(1f, label.Opacity);
+		}
+
+		[Test]
+		public void ClearingTheSelectionBringsBackThePlaceholder()
+		{
+			var combo = CreateOpenedComboBox("alpha");
+			combo.PlaceholderText = "Pick one";
+			combo.SelectedIndex = 0;
+
+			combo.SelectedIndex = null;
+
+			Assert.AreEqual("Pick one", ClosedBoxLabel(combo).Text);
+		}
+
+		[Test]
+		public void NoPlaceholderLeavesTheClosedBoxBlankWhileUnselected()
+		{
+			var combo = new SearchableComboBox<string>();
+			combo.Items.Add("alpha");
+
+			Assert.AreEqual(string.Empty, ClosedBoxLabel(combo).Text);
+		}
+
+		[Test]
+		public void CopyFromCarriesThePlaceholderText()
+		{
+			var source = new SearchableComboBox<string>
+			{
+				PlaceholderText = "Pick one"
+			};
+
+			var target = new SearchableComboBox<string>();
+			target.CopyFrom(source);
+
+			Assert.AreEqual("Pick one", target.PlaceholderText);
+		}
+
 		[Test]
 		public void InvalidRegexLeavesTheListEmptyRatherThanThrowing()
 		{

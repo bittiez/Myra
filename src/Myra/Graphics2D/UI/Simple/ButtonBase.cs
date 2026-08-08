@@ -6,10 +6,13 @@ using Myra.Utility;
 using Myra.Events;
 
 #if MONOGAME || FNA
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 #elif STRIDE
+using Stride.Core.Mathematics;
 using Stride.Input;
 #else
+using System.Drawing;
 using Myra.Platform;
 #endif
 
@@ -118,7 +121,7 @@ namespace Myra.Graphics2D.UI
 
 		public void DoClick()
 		{
-			OnTouchDown();
+			OnTouchDown(new TouchEventArgs(Point.Zero, TouchButton.Left));
 			OnTouchUp();
 		}
 
@@ -174,9 +177,9 @@ namespace Myra.Graphics2D.UI
 			}
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			if (!Enabled)
 			{
