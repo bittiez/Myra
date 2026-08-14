@@ -4,6 +4,7 @@ using Myra.Graphics2D.UI.Styles;
 using Myra.Utility;
 using System.Xml.Serialization;
 using Myra.Attributes;
+using Myra.Events;
 
 #if MONOGAME || FNA
 using Microsoft.Xna.Framework;
@@ -363,9 +364,9 @@ namespace Myra.Graphics2D.UI
 			_startBoundsPos = null;
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			if (Desktop == null)
 			{

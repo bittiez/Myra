@@ -1172,7 +1172,7 @@ namespace Myra.Graphics2D.UI
 			_isTouchDown = false;
 		}
 
-		private void DesktopTouchDown(object sender, EventArgs e)
+		private void DesktopTouchDown(object sender, TouchEventArgs e)
 		{
 			if (!Enabled || !IsTouchInside || Length == 0)
 			{

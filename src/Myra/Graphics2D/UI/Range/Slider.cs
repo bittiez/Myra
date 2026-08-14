@@ -236,9 +236,9 @@ namespace Myra.Graphics2D.UI
 			SyncHintWithValue();
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			UpdateHint();
 			ImageButton.IsPressed = true;

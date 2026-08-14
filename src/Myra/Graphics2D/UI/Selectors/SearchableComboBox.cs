@@ -33,13 +33,13 @@ namespace Myra.Graphics2D.UI
 	public class SearchableComboBox<T> : Widget, ISearchInputBoxOwner
 	{
 		/// <summary>Drawn thickness, in pixels, of the divider under the search header.</summary>
-		private const int DividerThickness = 1;
+		private const int DIVIDER_THICKNESS = 1;
 
 		/// <summary>Empty space, in pixels, kept above and below the header divider.</summary>
-		private const int DividerSpacing = 4;
+		private const int DIVIDER_SPACING = 4;
 
-		private readonly ObservableCollection<T> _items = new();
-		private readonly List<T> _visibleItems = new();
+		private readonly ObservableCollection<T> _items = [];
+		private readonly List<T> _visibleItems = [];
 		private readonly ToggleButton _button;
 		private readonly SearchInputBox _searchBox;
 		private readonly ListView _listView;
@@ -51,10 +51,15 @@ namespace Myra.Graphics2D.UI
 		private Thickness _baseHeaderMargin;
 		private bool _popupContentBuilt;
 		private bool _regexInvalid;
-		private IBrush? _defaultSearchBoxBorder;
+		private readonly IBrush? _defaultSearchBoxBorder;
 		private IBrush? _invalidBorderBrush;
 		private ISearchStrategy _strategy;
 		private string _searchText = string.Empty;
+
+		private string? _placeholderText;
+
+		/// <summary>Enough to read as a prompt rather than as a chosen value.</summary>
+		private const float PlaceholderOpacity = 0.55f;
 		private bool _showSearchDivider = true;
 		private int? _contentWidth;
 		private bool _filterDirty = true;
@@ -66,7 +71,7 @@ namespace Myra.Graphics2D.UI
 		/// The Desktop this widget lives on. Overridden to close the dropdown and move the
 		/// context-menu subscriptions across whenever it changes.
 		/// </summary>
-		public override Desktop Desktop
+		public override Desktop? Desktop
 		{
 			get => base.Desktop;
 
@@ -262,6 +267,28 @@ namespace Myra.Graphics2D.UI
 		{
 			get => _searchBox.HintText ?? string.Empty;
 			set => _searchBox.HintText = value;
+		}
+
+		/// <summary>
+		/// Text shown on the closed box while nothing is selected, dimmed to read as a prompt rather
+		/// than as a value. Without one an unselected box is blank, which says nothing about what it
+		/// is for.
+		/// </summary>
+		[Category("Behavior")]
+		public string? PlaceholderText
+		{
+			get => _placeholderText;
+
+			set
+			{
+				if (_placeholderText == value)
+				{
+					return;
+				}
+
+				_placeholderText = value;
+				UpdateButtonContent();
+			}
 		}
 
 		/// <summary>
@@ -475,14 +502,14 @@ namespace Myra.Graphics2D.UI
 				Visible = false
 			};
 
-			var dividerMargin = new Thickness(0, DividerSpacing);
+			var dividerMargin = new Thickness(0, DIVIDER_SPACING);
 			_headerDivider = new Widget
 			{
 				// Height is the widget's *total* footprint - Myra subtracts margin (and border
 				// and padding) from it to get the drawn box - so the vertical margin has to be
 				// baked in here. Height = DividerThickness with a non-zero margin would leave
 				// the background bounds empty (negative, in fact) and draw nothing at all.
-				Height = DividerThickness + dividerMargin.Top + dividerMargin.Bottom,
+				Height = DIVIDER_THICKNESS + dividerMargin.Top + dividerMargin.Bottom,
 				Margin = dividerMargin,
 				HorizontalAlignment = HorizontalAlignment.Stretch,
 				// Fallback only - kept in sync with PopupBorder (constructor, PopupBorder
@@ -609,10 +636,7 @@ namespace Myra.Graphics2D.UI
 			SelectedItem = item;
 			_hasSelection = hasSelection;
 
-			_button.Content = new Label
-			{
-				Text = (hasSelection ? TextSelector(item!) : null) ?? string.Empty
-			};
+			UpdateButtonContent();
 
 			if (committed)
 			{
@@ -620,6 +644,25 @@ namespace Myra.Graphics2D.UI
 			}
 
 			SelectedItemChanged?.Invoke(this, new ValueChangedEventArgs<T>(old!, item!));
+		}
+
+		/// <summary>
+		/// Rewrites the closed box's caption: the selected item's text, or the placeholder held back
+		/// at reduced opacity so a prompt cannot be mistaken for a value.
+		/// </summary>
+		private void UpdateButtonContent()
+		{
+			var label = new Label
+			{
+				Text = (_hasSelection ? TextSelector(SelectedItem!) : PlaceholderText) ?? string.Empty
+			};
+
+			if (!_hasSelection && !string.IsNullOrEmpty(PlaceholderText))
+			{
+				label.Opacity = PlaceholderOpacity;
+			}
+
+			_button.Content = label;
 		}
 
 		/// <summary>
@@ -719,7 +762,7 @@ namespace Myra.Graphics2D.UI
 			// divider is off - must not end up flush against its bottom edge; scrolling the list
 			// then reads as the rows "touching" the box. The divider carries its own spacing, so
 			// only the divider-less case needs the header to reserve that gap itself.
-			int extraBottom = dividerVisible ? 0 : DividerSpacing * 2 + DividerThickness;
+			int extraBottom = dividerVisible ? 0 : DIVIDER_SPACING * 2 + DIVIDER_THICKNESS;
 			_searchHeader.Margin = new Thickness(
 				_baseHeaderMargin.Left,
 				_baseHeaderMargin.Top,
@@ -1142,6 +1185,7 @@ namespace Myra.Graphics2D.UI
 			FocusSearchOnClick = other.FocusSearchOnClick;
 			ClearSearchOnClose = other.ClearSearchOnClose;
 			SearchHintText = other.SearchHintText;
+			PlaceholderText = other.PlaceholderText;
 			SearchVisibleThreshold = other.SearchVisibleThreshold;
 			MaxVisibleResults = other.MaxVisibleResults;
 			DropdownMaximumHeight = other.DropdownMaximumHeight;

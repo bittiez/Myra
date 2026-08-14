@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Myra.Events;
 using Myra.Graphics2D.UI.Styles;
 using System.ComponentModel;
 using System.Xml.Serialization;
@@ -160,9 +161,9 @@ namespace Myra.Graphics2D.UI
 			}
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			if (Desktop == null)
 			{

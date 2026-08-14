@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using Myra.Events;
 using Myra.Graphics2D.UI.Styles;
 
 #if MONOGAME || FNA
@@ -178,9 +179,9 @@ namespace Myra.Graphics2D.UI
 			}
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 
 			if (Desktop == null)
 			{

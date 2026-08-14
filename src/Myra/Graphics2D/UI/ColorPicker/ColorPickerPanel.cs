@@ -313,9 +313,9 @@ namespace Myra.Graphics2D.UI.ColorPicker
 			}
 		}
 
-		public override void OnTouchDown()
+		public override void OnTouchDown(TouchEventArgs args)
 		{
-			base.OnTouchDown();
+			base.OnTouchDown(args);
 			ProcessTouch();
 		}
 

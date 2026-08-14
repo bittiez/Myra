@@ -123,6 +123,39 @@ namespace Myra.Graphics2D.UI
 
 		protected internal virtual bool AcceptsMouseWheel => false;
 
+		/// <summary>
+		/// When true, the widget takes the mouse wheel only while it, or something inside it, holds
+		/// keyboard focus - hovering is not enough.
+		/// <para>
+		/// For a widget whose wheel changes a value rather than scrolls a view. Scrolling a panel
+		/// over a row of spin buttons otherwise edits whichever one the pointer happens to cross,
+		/// and the user has no reason to connect the change to the scroll.
+		/// </para>
+		/// </summary>
+		[Category("Behavior")]
+		[DefaultValue(false)]
+		public bool MouseWheelRequiresFocus { get; set; }
+
+		/// <summary>
+		/// Whether this widget, or anything beneath it, currently holds keyboard focus. A composite
+		/// editor is focused through its inner text field, so testing this widget alone is not enough.
+		/// </summary>
+		private bool ContainsKeyboardFocus
+		{
+			get
+			{
+				for (var widget = Desktop?.FocusedKeyboardWidget; widget != null; widget = widget.Parent)
+				{
+					if (ReferenceEquals(widget, this))
+					{
+						return true;
+					}
+				}
+
+				return false;
+			}
+		}
+
 		public event EventHandler PlacedChanged;
 		public event EventHandler VisibleChanged;
 		public event EventHandler EnabledChanged;
@@ -138,7 +171,7 @@ namespace Myra.Graphics2D.UI
 		public event EventHandler TouchLeft;
 		public event EventHandler TouchEntered;
 		public event EventHandler TouchMoved;
-		public event EventHandler TouchDown;
+		public event EventHandler<TouchEventArgs> TouchDown;
 		public event EventHandler TouchUp;
 		public event EventHandler TouchDoubleClick;
 
@@ -218,7 +251,8 @@ namespace Myra.Graphics2D.UI
 
 				if (IsMouseInside &&
 					!Desktop.MouseWheelDelta.IsZero() &&
-					AcceptsMouseWheel)
+					AcceptsMouseWheel &&
+					(!MouseWheelRequiresFocus || ContainsKeyboardFocus))
 				{
 					inputContext.MouseWheelWidget = this;
 				}
@@ -364,8 +398,9 @@ namespace Myra.Graphics2D.UI
 						}
 					}
 
-					OnTouchDown();
-					TouchDown.Invoke(this);
+					var touchDownArgs = new TouchEventArgs(LocalTouchPosition ?? Point.Zero, Desktop?.TouchButton ?? TouchButton.None);
+					OnTouchDown(touchDownArgs);
+					TouchDown?.Invoke(this, touchDownArgs);
 					break;
 				case InputEventType.TouchUp:
 					OnTouchUp();
@@ -406,7 +441,7 @@ namespace Myra.Graphics2D.UI
 		{
 		}
 
-		public virtual void OnTouchDown()
+		public virtual void OnTouchDown(TouchEventArgs args)
 		{
 		}
 
