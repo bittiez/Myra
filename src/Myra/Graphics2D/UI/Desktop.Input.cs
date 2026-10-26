@@ -305,6 +305,27 @@ namespace Myra.Graphics2D.UI
 			Array.Copy(_downKeys, _lastDownKeys, _downKeys.Length);
 		}
 
+		/// <summary>
+		/// Advances the wheel baseline to the platform's current wheel position without dispatching
+		/// any input. <see cref="MouseInfo.Wheel"/> is absolute and accumulates, so a desktop that
+		/// skips <see cref="Render"/> for a while (because it is not the one being interacted with)
+		/// would otherwise replay every notch scrolled in the meantime as a single scroll the next
+		/// time it renders. Callers that skip the input pass must call this instead.
+		/// </summary>
+		public void SynchronizeMouseWheel()
+		{
+			if (MyraEnvironment.MouseInfoGetter == null)
+			{
+				return;
+			}
+
+			_lastMouseInfo.Wheel = MyraEnvironment.MouseInfoGetter().Wheel;
+
+			// Assigned directly rather than through the property: there is nothing to dispatch, and
+			// the setter would queue a wheel event for a scroll that never reached this desktop.
+			_mouseWheelDelta = 0;
+		}
+
 		public void UpdateInput()
 		{
 			UpdateKeyboardInput();
