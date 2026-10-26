@@ -157,5 +157,34 @@ namespace Myra.Tests
 
 			Assert.AreEqual(6, spin.Value);
 		}
+
+		[Test]
+		public void WheelMovedWhileNotRenderingIsNotReplayedAfterSynchronize()
+		{
+			var spin = new SpinButton
+			{
+				Left = 0,
+				Top = 0,
+				Width = 100,
+				Height = 30,
+				Value = 5
+			};
+
+			var mouse = new MouseInfo { Position = new Point(10, 10), Wheel = 0 };
+			MyraEnvironment.MouseInfoGetter = () => mouse;
+
+			var desktop = CreateDesktop(spin);
+			desktop.Render();
+
+			// The wheel is an absolute value. Scroll it several notches while this desktop is not
+			// rendering, as happens when another window owns the mouse, then skip the input pass.
+			mouse.Wheel = 30;
+			desktop.SynchronizeMouseWheel();
+
+			// The cursor enters the window with no further scrolling: nothing should move.
+			desktop.Render();
+
+			Assert.AreEqual(5, spin.Value);
+		}
 	}
 }
